@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Map of Philosophy</title>
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+    background: radial-gradient(circle at top, #f6f7ff 0, #e9ecf5 40%, #dde1ea 100%);
+    color: #222;
+  }
+  #viz {
+    width: 100vw;
+    height: 100vh;
+  }
+  #controls {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 14px;
+    border-radius: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+  }
+  #title {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 800;
+    line-height: 1;
+    color: #1f2a44;
+    text-shadow: 0 2px 8px rgba(255,255,255,0.9);
+  }
+  #control-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  #controls select,
+  #controls input {
+    border-radius: 999px;
+    border: 1px solid #ccc;
+    padding: 3px 8px;
+    font-size: 13px;
+    outline: none;
+  }
+  #controls select:focus,
+  #controls input:focus {
+    border-color: #4a6cf7;
+    box-shadow: 0 0 0 1px rgba(74,108,247,0.3);
+  }
+  #controls button {
+    border-radius: 999px;
+    border: none;
+    padding: 4px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #4a6cf7, #6f8bff);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  }
+  #controls button:hover {
+    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+    transform: translateY(-0.5px);
+  }
+
+  .node circle {
+    transition: fill 0.2s ease, stroke-width 0.2s ease;
+  }
+  .node-label {
+    pointer-events: none;
+    font-size: 10px;
+    fill: #333;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  }
+
+  #legend {
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    z-index: 25;
+    width: min(280px, 36vw);
+    max-height: 48vh;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    padding: 10px 12px;
+    backdrop-filter: blur(4px);
+  }
+  .legend-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #1f2a44;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 5px 0;
+    font-size: 12px;
+    color: #1f2937;
+  }
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex: 0 0 12px;
+    border: 1px solid rgba(0,0,0,0.16);
+  }
+  .legend-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #legend:empty::before {
+    content: "Loading legend...";
+    color: #475569;
+    font-size: 12px;
+  }
+
+  #modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: none;
+    align-items: stretch;
+    justify-content: flex-end;
+    z-index: 20;
+  }
+  #modal {
+    background: white;
+    padding: 1rem 1.5rem;
+    width: min(42vw, 640px);
+    height: 100vh;
+    overflow-y: auto;
+    border-radius: 0;
+    box-shadow: -16px 0 40px rgba(15,23,42,0.28);
+  }
+  #modal h2 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  #modal-close {
+    float: right;
+    cursor: pointer;
+    font-weight: bold;
+    color: #666;
+  }
+  #modal-close:hover {
+    color: #111;
+  }
+
+  @media (max-width: 900px) {
+    #controls {
+      top: 8px;
+      width: calc(100vw - 20px);
+    }
+    #title {
+      font-size: 18px;
+      letter-spacing: 0.06em;
+    }
+    #control-row {
+      gap: 8px;
+    }
+    #legend {
+      left: 10px;
+      bottom: 10px;
+      width: min(260px, 58vw);
+      max-height: 36vh;
+    }
+    #modal-overlay {
+      align-items: flex-end;
+      justify-content: stretch;
+    }
+    #modal {
+      width: 100vw;
+      height: min(70vh, 640px);
+      border-top-left-radius: 16px;
+      border-top-right-radius: 16px;
+      box-shadow: 0 -10px 32px rgba(15,23,42,0.28);
+    }
+  }
+</style>
+</head>
+<body>
+  <div id="controls">
+    <h1 id="title">Map of Philosophy</h1>
+    <div id="control-row">
+      <label>
+        Map:
+        <select id="map-select">
+          <option value="data/coords_semantic_tsne.csv">Semantic</option>
+          <option value="data/coords_node2vec_tsne.csv">Influence</option>
+        </select>
+      </label>
+      <label>
+        Color by:
+        <select id="color-select">
+          <option value="Era">Era</option>
+          <option value="Civilization/Tradition">Civilization/Tradition</option>
+          <option value="School/Movement">School/Movement</option>
+          <option value="PrimaryTopics">PrimaryTopics</option>
+          <option value="Region">Region</option>
+        </select>
+      </label>
+      <div id="search-container" style="position:relative; display:inline-block;">
+      <label>
+          Search:
+          <input id="search-input" type="text" placeholder="Type a name...">
+      </label>
+      <div id="search-suggestions" ...></div>
+      </div>
+      <button id="search-button">Go</button>
+    </div>
+  </div>
+
+  <div id="viz"></div>
+  <div id="legend"></div>
+
+  <div id="modal-overlay">
+    <div id="modal">
+      <span id="modal-close">✕</span>
+      <h2 id="modal-title"></h2>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
