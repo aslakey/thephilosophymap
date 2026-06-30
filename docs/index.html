@@ -164,6 +164,38 @@
   #modal-close:hover {
     color: #111;
   }
+  #about-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+  }
+  #about-modal {
+    background: white;
+    padding: 1rem 1.5rem;
+    max-width: 640px;
+    max-height: 80vh;
+    overflow-y: auto;
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(15,23,42,0.3);
+    font-size: 14px;
+  }
+  #about-modal h2 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+  }
+  #about-close {
+    float: right;
+    cursor: pointer;
+    font-weight: bold;
+    color: #666;
+  }
+  #about-close:hover {
+    color: #111;
+  }
 
   @media (max-width: 900px) {
     #controls {
@@ -194,6 +226,10 @@
       border-top-right-radius: 16px;
       box-shadow: 0 -10px 32px rgba(15,23,42,0.28);
     }
+    #about-modal {
+      width: 90vw;
+      max-height: 80vh;
+    }
   }
 </style>
 </head>
@@ -223,9 +259,16 @@
           Search:
           <input id="search-input" type="text" placeholder="Type a name...">
       </label>
-      <div id="search-suggestions" ...></div>
+      <div id="search-suggestions"
+          style="position:absolute; top:100%; left:0;
+                  background:white; border:1px solid #ccc;
+                  border-radius:4px; max-height:200px;
+                  overflow-y:auto; display:none; z-index:20;
+                  font-size:13px; min-width:200px;">
+      </div>
       </div>
       <button id="search-button">Go</button>
+      <button id="about-button" type="button">About</button>
     </div>
   </div>
 
@@ -237,6 +280,28 @@
       <span id="modal-close">✕</span>
       <h2 id="modal-title"></h2>
       <div id="modal-content"></div>
+    </div>
+  </div>
+  <div id="about-overlay">
+    <div id="about-modal">
+      <span id="about-close">✕</span>
+      <h2>About the Map of Philosophy</h2>
+      <p>
+        This map is an interactive guide to major philosophers across traditions, eras,
+        and schools of thought. Each point represents a thinker positioned either by
+        how they are connected in the influence network (“Influence” view) or by the
+        semantics of their core ideas (“Semantic” view).
+      </p>
+      <p>
+        Use the “Map” selector to switch between views, “Color by” to highlight different
+        dimensions (era, tradition, topics, etc.), and search to jump directly to a
+        particular philosopher. Clicking a philosopher opens a panel with core teachings,
+        historical context, and key works.
+      </p>
+      <p>
+        The goal is not to be exhaustive, but to offer a readable, comparative overview
+        of philosophical thought as an ongoing, interconnected conversation.
+      </p>
     </div>
   </div>
 

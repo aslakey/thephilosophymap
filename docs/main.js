@@ -196,8 +196,8 @@ function focusNodeForModal(node) {
 function loadAndRender(coordsPath, colorBy) {
   Promise.all([
     d3.csv(coordsPath),
-    d3.csv("../data/philosophers.csv"),
-    d3.csv("../data/details.csv")
+    d3.csv("data/philosophers.csv"),
+    d3.csv("data/details.csv")
   ]).then(([coords, philosophers, details]) => {
     const nameById = new Map(philosophers.map(d => [d.ID, d.Name]));
     const detailsById = new Map(details.map(d => [d.ID, d]));
@@ -390,7 +390,7 @@ function showModal(d) {
   overlay.style.display = "flex";
 }
 
-// Modal close handlers and initial load
+// DOM Elements e.g. Modal close handlers and initial load
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("modal-overlay");
   const closeBtn = document.getElementById("modal-close");
@@ -400,6 +400,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchInput = document.getElementById("search-input");
   const searchButton = document.getElementById("search-button");
   const suggestionsBox = document.getElementById("search-suggestions");
+
+  const aboutButton = document.getElementById("about-button");
+  const aboutOverlay = document.getElementById("about-overlay");
+  const aboutClose = document.getElementById("about-close");
+
+  if (aboutButton && aboutOverlay && aboutClose) {
+    aboutButton.addEventListener("click", () => {
+      aboutOverlay.style.display = "flex";
+    });
+
+    aboutClose.addEventListener("click", () => {
+      aboutOverlay.style.display = "none";
+    });
+
+    aboutOverlay.addEventListener("click", (e) => {
+      if (e.target.id === "about-overlay") {
+        aboutOverlay.style.display = "none";
+      }
+    });
+  }
   
   function getSearchSuggestions(query, maxResults = 8) {
     if (!query) return [];

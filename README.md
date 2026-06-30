@@ -59,6 +59,11 @@ Generated coordinate files are stored under `web/data/` (for example `coords_nod
 
 ---
 
+## Hosting Locally
+With simple python server:
+`python3 -m http.server 8000`
+
+
 ## Developer Env
 
 ### Python
