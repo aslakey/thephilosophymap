@@ -9,10 +9,16 @@ const LABEL_ZOOM_THRESHOLD = 2.2;
 const MODAL_DESIRED_SCALE = 3;
 // Each dimension is a curated, described vocabulary of ~8-20 categories (see
 // docs/data/dimensions/manifest.json), so allow enough legend slots to show
-// them without an extra "Other" bucket.
-// d3.schemeTableau10 + d3.schemeSet3 provides 22 distinct colors.
+// them all without falling back to an "Other" bucket. Colours are generated to
+// fit this count -- see categoricalPalette().
 const LEGEND_MAX_MAIN_CATEGORIES = 20;
 const DEFAULT_COLOR_BY_KEY = "era";
+const THEME_STORAGE_KEY = "mop-theme";
+
+// Opacity for points filtered out via the legend, and for the rest of the map
+// while hovering a single legend category.
+const DIMMED_OPACITY = 0.08;
+const SPOTLIGHT_OTHERS_OPACITY = 0.14;
 
 // Global references to current state
 let currentNodes = [];
@@ -25,6 +31,77 @@ let globalColorByField = null;   // dimension key of current color field, e.g. "
 let globalColorScale = null;     // current D3 scale
 let globalColorValueMapper = null;
 let globalColorDescByName = new Map(); // category Name -> Description, for the active color-by dimension
+
+let legendDomain = [];             // categories shown in the legend, in display order
+
+// Legend interaction state.
+let hiddenCategories = new Set();  // categories toggled off by clicking the legend
+let hoveredCategory = null;        // category currently hovered in the legend
+
+// -------- Colour --------
+
+function isDarkTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark";
+}
+
+// Categorical colours generated in HCL so every swatch shares a chroma and
+// lightness family, which keeps the map coherent instead of looking like two
+// palettes stitched together. Hues are spread evenly to maximise the smallest
+// distance between any two categories, and lightness alternates to give a
+// second axis of separation -- necessary because some dimensions carry 20
+// categories, where hue alone leaves neighbours only 18 degrees apart.
+function categoricalPalette(count) {
+  const dark = isDarkTheme();
+  const colors = d3.range(count).map(i => {
+    const even = i % 2 === 0;
+    return d3.hcl(
+      ((i * 360) / count + 15) % 360,
+      even ? 58 : 70,
+      dark ? (even ? 74 : 61) : (even ? 65 : 50)
+    ).formatHex();
+  });
+
+  // Legend order follows category frequency, so hand out hues from opposite
+  // sides of the wheel alternately -- otherwise the most common categories,
+  // which sit next to each other in the legend, get adjacent hues.
+  const half = Math.ceil(count / 2);
+  const interleaved = [];
+  for (let i = 0; i < half; i++) {
+    interleaved.push(colors[i]);
+    if (i + half < count) interleaved.push(colors[i + half]);
+  }
+  return interleaved;
+}
+
+// Absent or bucketed data shouldn't compete with real categories for attention.
+function neutralColor(category) {
+  const dark = isDarkTheme();
+  if (category === "Unknown") return dark ? "#475569" : "#cbd5e1";
+  return dark ? "#64748b" : "#94a3b8";
+}
+
+function colorForCategory(category) {
+  if (category === "Unknown" || category === "Other") return neutralColor(category);
+  return globalColorScale ? globalColorScale(category) : neutralColor("Other");
+}
+
+function accentColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#4f46e5";
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (err) {
+    // Storage can be unavailable (private browsing); the theme still applies.
+  }
+  // Palette lightness is chosen per theme, so the scale has to be rebuilt.
+  if (globalColorByField) {
+    rebuildColorScale(globalColorByField);
+    recolorExistingNodes();
+  }
+}
 
 // -------- Dimensional data model (docs/data/dimensions/manifest.json) --------
 // Populated once at startup by loadStaticData(); everything else reads from
@@ -122,14 +199,21 @@ function rebuildColorScale(colorByField) {
     return hasLongTail ? "Other" : rawValue;
   };
 
-  const mappedDomain = [];
-  knownValues.slice(0, LEGEND_MAX_MAIN_CATEGORIES).forEach(v => mappedDomain.push(v));
-  if (hasLongTail) mappedDomain.push("Other");
-  if (counts.has("Unknown")) mappedDomain.push("Unknown");
+  // Only real categories consume palette slots; "Other"/"Unknown" are rendered
+  // in neutral grey by colorForCategory().
+  const realCategories = knownValues.slice(0, LEGEND_MAX_MAIN_CATEGORIES);
 
   globalColorScale = d3.scaleOrdinal()
-    .domain(mappedDomain)
-    .range(d3.schemeTableau10.concat(d3.schemeSet3));
+    .domain(realCategories)
+    .range(categoricalPalette(Math.max(realCategories.length, 1)));
+
+  legendDomain = realCategories.slice();
+  if (hasLongTail) legendDomain.push("Other");
+  if (counts.has("Unknown")) legendDomain.push("Unknown");
+
+  // A category that no longer exists in this dimension shouldn't stay filtered.
+  hiddenCategories = new Set([...hiddenCategories].filter(c => legendDomain.includes(c)));
+  hoveredCategory = null;
 
   renderLegend();
 }
@@ -151,39 +235,80 @@ function renderLegend() {
     groupedCounts.set(key, (groupedCounts.get(key) || 0) + 1);
   });
 
-  const domain = globalColorScale.domain();
   legend.html("");
 
   legend.append("div")
     .attr("class", "legend-title")
-    .text(`Color by: ${labelForDimensionKey(globalColorByField)}`);
+    .text(labelForDimensionKey(globalColorByField));
+
+  legend.append("div")
+    .attr("class", "legend-hint")
+    .text("Hover to spotlight, click to filter");
 
   const rows = legend.selectAll(".legend-row")
-    .data(domain, d => d)
+    .data(legendDomain, d => d)
     .enter()
     .append("div")
     .attr("class", "legend-row")
-    .attr("title", d => globalColorDescByName.get(d) || "");
+    .classed("is-muted", d => hiddenCategories.has(d))
+    .attr("title", d => globalColorDescByName.get(d) || "")
+    .on("mouseenter", (_, d) => {
+      hoveredCategory = hiddenCategories.has(d) ? null : d;
+      updateNodeVisibility();
+    })
+    .on("mouseleave", () => {
+      hoveredCategory = null;
+      updateNodeVisibility();
+    })
+    .on("click", (_, d) => {
+      if (hiddenCategories.has(d)) {
+        hiddenCategories.delete(d);
+        hoveredCategory = d;
+      } else {
+        hiddenCategories.add(d);
+        hoveredCategory = null;
+      }
+      renderLegend();
+      updateNodeVisibility();
+    });
 
   rows.append("span")
     .attr("class", "legend-swatch")
-    .style("background", d => globalColorScale(d));
+    .style("background", d => colorForCategory(d));
 
   rows.append("span")
     .attr("class", "legend-label")
-    .text(d => `${d} (${groupedCounts.get(d) || 0})`);
+    .text(d => d);
+
+  rows.append("span")
+    .attr("class", "legend-count")
+    .text(d => groupedCounts.get(d) || 0);
+}
+
+// Opacity for a single node given the current filter/spotlight state.
+function nodeOpacity(d) {
+  const category = colorCategoryForNode(d);
+  if (hiddenCategories.has(category)) return DIMMED_OPACITY;
+  if (hoveredCategory && category !== hoveredCategory) return SPOTLIGHT_OTHERS_OPACITY;
+  return 1;
+}
+
+function updateNodeVisibility() {
+  d3.selectAll(".node")
+    .style("opacity", d => nodeOpacity(d))
+    // Filtered-out points shouldn't swallow clicks meant for visible ones.
+    .style("pointer-events", d => hiddenCategories.has(colorCategoryForNode(d)) ? "none" : null);
 }
 
 function recolorExistingNodes() {
   if (!globalColorScale || !globalColorByField) return;
 
   d3.selectAll(".node circle")
-    .attr("fill", d => {
-      return globalColorScale(colorCategoryForNode(d));
-    });
+    .attr("fill", d => colorForCategory(colorCategoryForNode(d)));
 
   // Re-apply stroke logic so selected node stays highlighted.
   updateSelectionHighlight();
+  updateNodeVisibility();
 }
 
 function selectNode(node) {
@@ -330,13 +455,15 @@ function createViz(nodes, colorByField) {
 
   // Build and store color scale for this render.
   rebuildColorScale(colorByField);
-  
+
   function getColor(d) {
-    return globalColorScale(colorCategoryForNode(d));
+    return colorForCategory(colorCategoryForNode(d));
   }
 
-  // Node group
-  const node = g.selectAll(".node")
+  // One shared layer so the drop shadow is rasterised once rather than per node.
+  const nodesLayer = g.append("g").attr("class", "nodes-layer");
+
+  const node = nodesLayer.selectAll(".node")
     .data(nodes)
     .enter()
     .append("g")
@@ -349,7 +476,6 @@ function createViz(nodes, colorByField) {
   node.append("circle")
     .attr("r", NODE_RADIUS)
     .attr("stroke-width", 1.5)
-    .attr("stroke", d => getColor(d))
     .attr("fill", d => getColor(d));
 
   node.append("text")
@@ -416,26 +542,20 @@ function escapeHtml(str) {
 }
 
 function updateSelectionHighlight() {
+  // Unselected nodes get their ring from CSS (--node-ring), which is what keeps
+  // overlapping points readable; only the selection overrides it.
   d3.selectAll(".node circle")
-    .attr("stroke-width", d => d.ID === selectedID ? 3 : 1.5)
-    .attr("stroke", function(d) {
-      if (d.ID === selectedID) {
-        return "#4a6cf7";  // highlight color (match your Go button)
-      }
-      if (globalColorScale && globalColorByField) {
-        return globalColorScale(colorCategoryForNode(d));
-      }
-      return d3.select(this).attr("stroke");
-    });
+    .attr("stroke-width", d => d.ID === selectedID ? 3.5 : 1.5)
+    .attr("stroke", d => d.ID === selectedID ? accentColor() : null);
 }
 
 function renderModalDimensionRows(philosopherId) {
   return dimensionsManifest.map(entry => {
     const values = allValues(philosopherId, entry.key);
     const valueHtml = values.length
-      ? values.map(v => `<span title="${escapeHtml(v.Description)}">${escapeHtml(v.Name)}</span>`).join(", ")
-      : "—";
-    return `<p><strong>${escapeHtml(entry.label)}:</strong> ${valueHtml}</p>`;
+      ? values.map(v => `<span class="chip" title="${escapeHtml(v.Description)}">${escapeHtml(v.Name)}</span>`).join(" ")
+      : `<span class="chip-empty">—</span>`;
+    return `<div class="dim-row"><span class="dim-label">${escapeHtml(entry.label)}</span>${valueHtml}</div>`;
   }).join("\n");
 }
 
@@ -449,9 +569,12 @@ function showModal(d) {
 
   titleEl.textContent = d.Name;
 
+  const birth = escapeHtml(phil["BirthYear"]);
+  const death = escapeHtml(phil["DeathYear"]);
+
   contentEl.innerHTML = `
+    <p class="modal-dates">${birth} – ${death}</p>
     ${renderModalDimensionRows(d.ID)}
-    <p><strong>Birth – Death:</strong> ${escapeHtml(phil["BirthYear"])} – ${escapeHtml(phil["DeathYear"])}</p>
     <h3>Core Teachings</h3>
     <p>${escapeHtml(phil["CoreTeachings"])}</p>
     <h3>Historical Context</h3>
@@ -472,8 +595,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const colorSelect = document.getElementById("color-select");
 
   const searchInput = document.getElementById("search-input");
-  const searchButton = document.getElementById("search-button");
   const suggestionsBox = document.getElementById("search-suggestions");
+  const themeButton = document.getElementById("theme-button");
 
   const aboutButton = document.getElementById("about-button");
   const aboutOverlay = document.getElementById("about-overlay");
@@ -536,23 +659,13 @@ document.addEventListener("DOMContentLoaded", () => {
   
     suggestions.forEach(d => {
       const item = document.createElement("div");
-      item.textContent = `${d.Name}`;
-      item.style.padding = "4px 8px";
-      item.style.cursor = "pointer";
-      item.addEventListener("mouseenter", () => {
-        item.style.backgroundColor = "#eef2ff";
-      });
-      item.addEventListener("mouseleave", () => {
-        item.style.backgroundColor = "white";
-      });
+      item.className = "suggestion";
+      item.textContent = d.Name;
       item.addEventListener("click", () => {
-        // When a suggestion is clicked:
         searchInput.value = d.Name;
         suggestionsBox.style.display = "none";
         selectNode(d);
         zoomToNode(d);
-        // Optional: open modal
-        // showModal(d);
       });
       suggestionsBox.appendChild(item);
     });
@@ -570,9 +683,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   
-  if (searchButton) {
-    searchButton.addEventListener("click", handleSearch);
-  }
   
   if (searchInput) {
     searchInput.addEventListener("keydown", (e) => {
@@ -625,18 +735,39 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const initialMap = mapSelect.value;
-    const initialColor = colorSelect.value;
-    loadAndRender(initialMap, initialColor);
+    loadAndRender(currentMapValue(), colorSelect.value);
   }).catch(err => {
     console.error("Error loading dimensional data:", err);
   });
 
-  // When map changes
-  mapSelect.addEventListener("change", () => {
-    const coordsPath = mapSelect.value;
-    const colorBy = colorSelect.value;
-    loadAndRender(coordsPath, colorBy);
+  // Map view is a segmented toggle rather than a <select>, since there are only
+  // two options and the choice is the primary thing to communicate.
+  function currentMapValue() {
+    const active = mapSelect.querySelector(".seg-btn.is-active");
+    return active ? active.dataset.value : "data/coords_semantic_tsne.csv";
+  }
+
+  mapSelect.addEventListener("click", (e) => {
+    const button = e.target.closest(".seg-btn");
+    if (!button || button.classList.contains("is-active")) return;
+    mapSelect.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("is-active", b === button));
+    loadAndRender(currentMapValue(), colorSelect.value);
+  });
+
+  if (themeButton) {
+    themeButton.addEventListener("click", () => {
+      setTheme(isDarkTheme() ? "light" : "dark");
+    });
+  }
+
+  // Escape closes whichever layer is open.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (aboutOverlay && aboutOverlay.style.display === "flex") {
+      aboutOverlay.style.display = "none";
+    } else if (overlay && overlay.style.display === "flex") {
+      overlay.style.display = "none";
+    }
   });
 
   // When color scheme changes
