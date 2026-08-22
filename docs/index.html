@@ -187,6 +187,25 @@
     margin-top: 0;
     margin-bottom: 0.75rem;
   }
+  #about-modal p,
+  #about-modal li {
+    line-height: 1.6;
+    color: #1f2937;
+  }
+  #about-modal ul {
+    margin: 0.5rem 0;
+    padding-left: 1.1rem;
+  }
+  #about-modal li {
+    margin-bottom: 0.4rem;
+  }
+  #about-modal .about-note {
+    margin-top: 1.1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(15, 23, 42, 0.1);
+    font-size: 13px;
+    color: #4b5563;
+  }
   #about-close {
     float: right;
     cursor: pointer;
@@ -282,20 +301,42 @@
       <span id="about-close">✕</span>
       <h2>About the Map of Philosophy</h2>
       <p>
-        This map is an interactive guide to major philosophers across traditions, eras,
-        and schools of thought. Each point represents a thinker positioned either by
-        how they are connected in the influence network (“Influence” view) or by the
-        semantics of their core ideas (“Semantic” view).
+        Built by <strong>Austin Slakey</strong>, an AI researcher at Netflix, the Map of
+        Philosophy is an exploratory guide to the world of philosophical thought. Instead
+        of a ranked list or a linear history, it lays thinkers out as a landscape you can
+        wander — to find philosophers similar to ones you have already read, notice the
+        gaps in your own knowledge, and deliberately seek out ideas distant from your own
+        beliefs.
       </p>
       <p>
-        Use the “Map” selector to switch between views, “Color by” to highlight different
-        dimensions (era, tradition, topics, etc.), and search to jump directly to a
-        particular philosopher. Clicking a philosopher opens a panel with core teachings,
-        historical context, and key works.
+        There are two ways to draw the map, and they disagree in interesting ways:
+      </p>
+      <ul>
+        <li>
+          <strong>Semantic</strong> places each philosopher by the meaning of their core
+          teachings, so nearby thinkers asked similar questions — even across centuries
+          and continents.
+        </li>
+        <li>
+          <strong>Influence</strong> places them by the network of who shaped whom, so
+          nearby thinkers share an intellectual lineage.
+        </li>
+      </ul>
+      <p>
+        A philosopher can keep very different company depending on which view you choose.
+        Those disagreements are often the most revealing thing on the map.
       </p>
       <p>
-        The goal is not to be exhaustive, but to offer a readable, comparative overview
-        of philosophical thought as an ongoing, interconnected conversation.
+        <strong>Color by</strong> re-shades everything along any of ten dimensions —
+        Political Orientation, Religious Orientation, Metaphysical Stance, Ethical
+        Orientation, Era, Region, School&nbsp;/&nbsp;Movement, and more. Every category
+        has a written definition: hover a legend entry to read it. Click any point for
+        core teachings, historical context, and key works, or search to jump straight to
+        someone specific.
+      </p>
+      <p class="about-note">
+        The map is a guide, not a verdict. It is not exhaustive, and every category is a
+        guidepost through a genuinely contested landscape rather than a settled label.
       </p>
     </div>
   </div>
