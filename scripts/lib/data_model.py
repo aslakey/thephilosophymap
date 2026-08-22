@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -92,7 +93,7 @@ COORDS_FILENAMES = [
 ]
 
 PHILOSOPHER_COLUMNS = [
-    "ID", "Name", "BirthYear", "DeathYear",
+    "ID", "Name", "ShortName", "BirthYear", "DeathYear",
     "CoreTeachings", "HistoricalContext", "KeyWorks", "Tags",
 ]
 DIMENSION_COLUMNS = ["ID", "Name", "Description"]
@@ -225,6 +226,34 @@ def next_philosopher_id(philosophers_df: pd.DataFrame) -> str:
         if digits:
             max_n = max(max_n, int(digits))
     return f"P{max_n + 1:03d}"
+
+
+def derive_short_name(name: str) -> str:
+    """Best-effort map label for a full name, used to seed ShortName.
+
+    This is a starting point, not an authority: it handles the two mechanical
+    patterns (parenthetical alternates, and "X of Place" where the tail is a
+    birthplace rather than a name) but cannot know that Augustine of Hippo is
+    "Augustine" while William of Ockham is "Ockham", or that "Zhu" in "Zhu Xi"
+    is a family name. Those live in ShortName, authored per philosopher.
+    """
+    name = (name or "").strip()
+    if not name:
+        return ""
+
+    # "Avicenna (Ibn Sina)" -> "Avicenna"
+    base = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", name).strip()
+    if not base:
+        base = name
+
+    # "Augustine of Hippo" -> "Augustine". Only English "of" marks a place here;
+    # particles like "de"/"van" are part of a surname ("Simone de Beauvoir").
+    match = re.match(r"^(.*?)\s+of\s+\S", base, flags=re.IGNORECASE)
+    if match and match.group(1):
+        return match.group(1).strip()
+
+    parts = base.split()
+    return base if len(parts) == 1 else parts[-1]
 
 
 def resolve_philosopher_id(philosophers_df: pd.DataFrame, identifier: str) -> str | None:
