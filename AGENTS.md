@@ -101,3 +101,12 @@ producing confusing git diffs.
 - **Dimension IDs are permanent.** `next_dimension_id` fills past the highest
   existing number rather than reusing gaps, so a deleted `RG2` is never
   reissued to a different category.
+- **`ShortName` is data, not a derived value.** It's the label on the map. When
+  `add` omits `short_name`, it's seeded from `derive_short_name()` and the
+  chosen value is printed -- check it. The heuristic handles parentheticals
+  (`Avicenna (Ibn Sina)` -> `Avicenna`) and `X of Place` (`Augustine of Hippo`
+  -> `Augustine`), but it cannot know that `Zhu Xi` shortens to `Zhu Xi` rather
+  than `Xi`, or that Ockham is known by the place and Augustine isn't. If the
+  philosopher's common short form isn't just their last name, set `short_name`
+  explicitly. `validate.py` will reject an empty one, and rejects labels
+  containing brackets since those indicate a name truncated mid-parenthetical.

@@ -48,6 +48,7 @@ PHILOSOPHER_FIXTURE = [
     {
         "ID": "P001",
         "Name": "Alpha",
+        "ShortName": "Alpha",
         "BirthYear": "-400",
         "DeathYear": "-330",
         "CoreTeachings": "Teachings of Alpha.",
@@ -58,6 +59,7 @@ PHILOSOPHER_FIXTURE = [
     {
         "ID": "P002",
         "Name": "Beta",
+        "ShortName": "Beta",
         "BirthYear": "1600",
         "DeathYear": "1670",
         "CoreTeachings": "Teachings of Beta.",
@@ -68,6 +70,7 @@ PHILOSOPHER_FIXTURE = [
     {
         "ID": "P003",
         "Name": "Gamma",
+        "ShortName": "Gamma",
         "BirthYear": "1900",
         "DeathYear": "1980",
         "CoreTeachings": "Teachings of Gamma.",

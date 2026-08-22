@@ -8,6 +8,7 @@ philosophers can't silently reintroduce free-text drift into the dimensions.
 Spec file format (JSON), all keys optional except "name" for `add`:
 {
   "name": "Jane Doe",
+  "short_name": "Doe",
   "birth_year": 1900,
   "death_year": 1980,
   "core_teachings": "...",
@@ -32,6 +33,11 @@ Spec file format (JSON), all keys optional except "name" for `add`:
 
 Dimension values are lists; order matters -- the first entry becomes Rank=1
 (the "primary" value used for map coloring).
+
+"short_name" is the label drawn on the map. If omitted it's derived from
+"name", which handles parentheticals and "X of Place" but can't know about
+non-Western name order or epithets -- so set it explicitly for anyone whose
+common short form isn't simply their last name.
 
 "influenced_by" / "influenced" list philosophers **by Name or ID** (mixing is
 fine). Setting either fully replaces that direction's edges for this
@@ -87,6 +93,7 @@ from lib.data_model import (  # noqa: E402
     COORDS_FILENAMES,
     PHILOSOPHER_COLUMNS,
     DataModelError,
+    derive_short_name,
     dimension_keys,
     find_dimension_id_by_name,
     load_coords,
@@ -107,6 +114,7 @@ from lib.data_model import (  # noqa: E402
 
 SCALAR_FIELD_MAP = {
     "name": "Name",
+    "short_name": "ShortName",
     "birth_year": "BirthYear",
     "death_year": "DeathYear",
     "core_teachings": "CoreTeachings",
@@ -346,6 +354,15 @@ def cmd_add(args):
     row = {col: "" for col in PHILOSOPHER_COLUMNS}
     row["ID"] = new_id
     apply_scalar_fields(row, spec)
+
+    # ShortName is the map label. Derive one when the spec omits it, but say so:
+    # the heuristic can't know about non-Western name order or epithets, so the
+    # result is worth a glance.
+    if not str(row.get("ShortName", "")).strip():
+        row["ShortName"] = derive_short_name(row["Name"])
+        print(f"  (derived short name {row['ShortName']!r} for the map label; "
+              f"set \"short_name\" in the spec to override)")
+
     philosophers = pd.concat([philosophers, pd.DataFrame([row])], ignore_index=True)
     save_philosophers(philosophers)
 

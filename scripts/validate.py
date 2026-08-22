@@ -1,6 +1,10 @@
 """
 Validate referential integrity of the dimensional data model.
 
+Checks philosophers.csv: IDs are unique, and every philosopher has a non-empty
+ShortName that doesn't look like a truncated name (a bracket character in a map
+label almost always means a parenthetical was cut in half).
+
 Checks, across every dimension declared in docs/data/dimensions/manifest.json:
   - dimension tables have unique, non-empty IDs and Names, and every row has
     a non-empty Description
@@ -90,6 +94,34 @@ def check_links_table(key: str, dim_df: pd.DataFrame, links_df: pd.DataFrame, ph
     return errors
 
 
+def check_philosophers(philosophers: pd.DataFrame) -> list[str]:
+    errors = []
+
+    duplicate_ids = philosophers.loc[philosophers["ID"].duplicated(), "ID"].tolist()
+    if duplicate_ids:
+        errors.append(f"[philosophers] duplicate IDs: {duplicate_ids}")
+
+    if "ShortName" not in philosophers.columns:
+        errors.append("[philosophers] missing ShortName column -- run scripts/migrations/0002_add_short_name.py")
+        return errors
+
+    missing_short = philosophers[philosophers["ShortName"].str.strip() == ""]
+    if not missing_short.empty:
+        errors.append(
+            f"[philosophers] {len(missing_short)} philosopher(s) with an empty ShortName "
+            f"(they would render unlabelled on the map): {missing_short['Name'].tolist()}"
+        )
+
+    # A bracket in a map label almost always means a name was truncated
+    # mid-parenthetical, e.g. "Siddhārtha Gautama (the Buddha)" -> "Buddha)".
+    malformed = philosophers[philosophers["ShortName"].str.contains(r"[()\[\]]", regex=True, na=False)]
+    if not malformed.empty:
+        pairs = malformed[["Name", "ShortName"]].values.tolist()
+        errors.append(f"[philosophers] ShortName contains bracket characters, likely a truncated name: {pairs}")
+
+    return errors
+
+
 def check_relations(philosopher_ids: set[str]) -> list[str]:
     errors = []
     if not relations_path().exists():
@@ -153,11 +185,7 @@ def main():
     philosophers = load_philosophers()
     philosopher_ids = set(philosophers["ID"])
 
-    duplicate_ids = philosophers.loc[philosophers["ID"].duplicated(), "ID"].tolist()
-
-    all_errors: list[str] = []
-    if duplicate_ids:
-        all_errors.append(f"[philosophers] duplicate IDs: {duplicate_ids}")
+    all_errors: list[str] = check_philosophers(philosophers)
 
     manifest = load_manifest()
     for entry in manifest:

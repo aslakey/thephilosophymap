@@ -132,12 +132,34 @@ ad hoc phrasing.
 **Columns**
 
 1. `ID` – short unique ID (e.g. `P001`, `P002`), used as the primary key everywhere else.
-2. `Name`
-3. `BirthYear` / `DeathYear` – integer years; negative for BCE (e.g. `-384` for 384 BCE). Can be blank or approximate.
-4. `CoreTeachings` – 3-4 sentences: key doctrines, questions, and characteristic methods. The "core description" a reader sees first.
-5. `HistoricalContext` – 2-3 sentences on when/where they lived, historical background, and roles they played.
-6. `KeyWorks` – 2-5 titles, `;`-separated (e.g. `Nicomachean Ethics;Metaphysics;Politics`).
-7. `Tags` – free-form `;`-separated keywords for anything that doesn't fit elsewhere.
+2. `Name` – the full name, as you'd write it in prose.
+3. `ShortName` – the label drawn on the map. Required and non-empty. See below.
+4. `BirthYear` / `DeathYear` – integer years; negative for BCE (e.g. `-384` for 384 BCE). Can be blank or approximate.
+5. `CoreTeachings` – 3-4 sentences: key doctrines, questions, and characteristic methods. The "core description" a reader sees first.
+6. `HistoricalContext` – 2-3 sentences on when/where they lived, historical background, and roles they played.
+7. `KeyWorks` – 2-5 titles, `;`-separated (e.g. `Nicomachean Ethics;Metaphysics;Politics`).
+8. `Tags` – free-form `;`-separated keywords for anything that doesn't fit elsewhere.
+
+### Why `ShortName` is stored rather than derived
+
+The map has room for one short label per point. That used to be computed in the
+frontend by taking the last word of `Name`, which fails in three ways:
+
+| Pattern | Example | Derived | Correct |
+| --- | --- | --- | --- |
+| Parenthetical | `Siddhārtha Gautama (the Buddha)` | `Buddha)` | `Buddha` |
+| "X of Place" | `Augustine of Hippo` | `Hippo` | `Augustine` |
+| Family name first | `Zhu Xi` | `Xi` | `Zhu Xi` |
+
+The last two matter most, because the wrong answer looks plausible: nobody
+questions a label reading `Hippo` the way they question `Buddha)`.
+
+The first two patterns are mechanical, and `derive_short_name()` in
+[`scripts/lib/data_model.py`](scripts/lib/data_model.py) handles them. The rest
+is knowledge rather than pattern — nothing in the string says that Augustine of
+Hippo shortens to `Augustine` while William of Ockham shortens to `Ockham` — so
+the value is authored per philosopher and `scripts/validate.py` enforces that
+every philosopher has one.
 
 ---
 

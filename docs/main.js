@@ -490,7 +490,7 @@ function createViz(nodes, colorByField) {
     .style("stroke-width", "1px")
     .style("pointer-events", "none")
     .style("opacity", 0.0)    // hide labels by default; can be changed later
-    .text(d => shortName(d.Name));
+    .text(d => shortName(d.philosopher, d.Name));
 
   node.append("title")
     .text(d => d.Name || d.ID);
@@ -521,10 +521,18 @@ simulation = d3.forceSimulation(nodes)
 
 // -------- Helpers --------
 
-function shortName(name) {
-  if (!name) return "";
-  const parts = name.split(/\s+/);
-  if (parts.length === 1) return name;
+// Map labels come from the authored ShortName column, because deriving them
+// here can't be made correct: "Augustine of Hippo" would label as "Hippo" and
+// "Zhu Xi" as "Xi". This fallback only covers a philosopher added without one.
+function shortName(philosopher, fullName) {
+  const authored = philosopher && philosopher.ShortName;
+  if (authored && authored.trim()) return authored.trim();
+
+  const base = (fullName || "").replace(/\s*[([][^)\]]*[)\]]/g, "").trim();
+  if (!base) return fullName || "";
+  const ofMatch = base.match(/^(.*?)\s+of\s+\S/i);
+  if (ofMatch && ofMatch[1]) return ofMatch[1].trim();
+  const parts = base.split(/\s+/);
   return parts[parts.length - 1];
 }
 
