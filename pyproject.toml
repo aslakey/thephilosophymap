@@ -1,0 +1,31 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [".venv", "notebooks", ".ipynb_checkpoints"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+]
+ignore = [
+    # Much of this codebase is human-readable prose: category descriptions in
+    # the migration and long single-line error messages meant to be read in a
+    # terminal. Wrapping those hurts more than it helps.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The scripts are standalone entry points, not an installed package, so they
+# put scripts/ on sys.path before importing the shared lib -- which necessarily
+# means an import that isn't at the top of the file.
+"scripts/*.py" = ["E402"]
+"scripts/migrations/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

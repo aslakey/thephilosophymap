@@ -1,0 +1,9 @@
+# Everything needed to run the three pre-merge gates: lint, tests, validation.
+#
+# Deliberately minimal. requirements.txt pins the full notebook stack (jupyter,
+# gensim, umap-learn, node2vec, ...) which is only needed to regenerate the map
+# embeddings; CI never does that, so it doesn't pay to install it.
+pandas==3.0.3
+numpy==1.26.4
+pytest==9.1.1
+ruff==0.16.4
