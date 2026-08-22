@@ -7,7 +7,12 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 10;
 const LABEL_ZOOM_THRESHOLD = 2.2;
 const MODAL_DESIRED_SCALE = 3;
-const LEGEND_MAX_MAIN_CATEGORIES = 10;
+// Each dimension is a curated, described vocabulary of ~8-20 categories (see
+// docs/data/dimensions/manifest.json), so allow enough legend slots to show
+// them without an extra "Other" bucket.
+// d3.schemeTableau10 + d3.schemeSet3 provides 22 distinct colors.
+const LEGEND_MAX_MAIN_CATEGORIES = 20;
+const DEFAULT_COLOR_BY_KEY = "era";
 
 // Global references to current state
 let currentNodes = [];
@@ -16,12 +21,84 @@ let currentTransform = d3.zoomIdentity;  // track current zoom/pan
 let zoomBehavior = null;
 
 let selectedID = null;           // current selected philosopher
-let globalColorByField = null;   // name of current color field
+let globalColorByField = null;   // dimension key of current color field, e.g. "era"
 let globalColorScale = null;     // current D3 scale
 let globalColorValueMapper = null;
+let globalColorDescByName = new Map(); // category Name -> Description, for the active color-by dimension
+
+// -------- Dimensional data model (docs/data/dimensions/manifest.json) --------
+// Populated once at startup by loadStaticData(); everything else reads from
+// these in-memory lookups instead of re-fetching CSVs.
+let dimensionsManifest = [];                  // [{key, label, file, linksFile}, ...]
+let philosophersById = new Map();             // ID -> philosophers.csv row
+let dimensionTables = {};                     // key -> Map(DimensionID -> {ID, Name, Description})
+let dimensionLinksByPhilosopher = {};         // key -> Map(PhilosopherID -> [{DimensionID, Rank}, ...] sorted by Rank)
+
+function labelForDimensionKey(key) {
+  const entry = dimensionsManifest.find(e => e.key === key);
+  return entry ? entry.label : key;
+}
+
+// The philosopher's Rank=1 (primary) value for a dimension, or null if they
+// have no linked value at all for that dimension.
+function primaryValue(philosopherId, key) {
+  const links = dimensionLinksByPhilosopher[key] && dimensionLinksByPhilosopher[key].get(philosopherId);
+  if (!links || links.length === 0) return null;
+  const table = dimensionTables[key];
+  return (table && table.get(links[0].DimensionID)) || null;
+}
+
+// All of the philosopher's linked values for a dimension, in Rank order.
+function allValues(philosopherId, key) {
+  const links = dimensionLinksByPhilosopher[key] && dimensionLinksByPhilosopher[key].get(philosopherId);
+  if (!links) return [];
+  const table = dimensionTables[key];
+  if (!table) return [];
+  return links.map(l => table.get(l.DimensionID)).filter(Boolean);
+}
+
+function loadStaticData() {
+  return d3.json("data/dimensions/manifest.json").then(manifest => {
+    dimensionsManifest = manifest;
+
+    const filePromises = [];
+    manifest.forEach(entry => {
+      filePromises.push(d3.csv("data/" + entry.file));
+      filePromises.push(d3.csv("data/" + entry.linksFile));
+    });
+    filePromises.push(d3.csv("data/philosophers.csv"));
+
+    return Promise.all(filePromises).then(results => {
+      const philosophers = results[results.length - 1];
+      philosophersById = new Map(philosophers.map(d => [d.ID, d]));
+
+      manifest.forEach((entry, i) => {
+        const dimRows = results[i * 2];
+        const linkRows = results[i * 2 + 1];
+
+        dimensionTables[entry.key] = new Map(dimRows.map(r => [r.ID, r]));
+
+        const byPhilosopher = new Map();
+        linkRows.forEach(r => {
+          const list = byPhilosopher.get(r.PhilosopherID) || [];
+          list.push({ DimensionID: r.DimensionID, Rank: +r.Rank });
+          byPhilosopher.set(r.PhilosopherID, list);
+        });
+        byPhilosopher.forEach(list => list.sort((a, b) => a.Rank - b.Rank));
+        dimensionLinksByPhilosopher[entry.key] = byPhilosopher;
+      });
+    });
+  });
+}
 
 function rebuildColorScale(colorByField) {
   globalColorByField = colorByField;
+
+  globalColorDescByName = new Map();
+  const table = dimensionTables[colorByField];
+  if (table) {
+    table.forEach(row => globalColorDescByName.set(row.Name, row.Description));
+  }
 
   const counts = new Map();
   currentNodes.forEach(d => {
@@ -58,7 +135,7 @@ function rebuildColorScale(colorByField) {
 }
 
 function colorCategoryForNode(d) {
-  const field = globalColorByField || "PrimaryTopics"; // or any default
+  const field = globalColorByField || DEFAULT_COLOR_BY_KEY;
   const rawValue = rawColorValueForNode(d, field);
   if (!globalColorValueMapper) return rawValue;
   return globalColorValueMapper(rawValue);
@@ -79,13 +156,14 @@ function renderLegend() {
 
   legend.append("div")
     .attr("class", "legend-title")
-    .text(`Color by: ${globalColorByField}`);
+    .text(`Color by: ${labelForDimensionKey(globalColorByField)}`);
 
   const rows = legend.selectAll(".legend-row")
     .data(domain, d => d)
     .enter()
     .append("div")
-    .attr("class", "legend-row");
+    .attr("class", "legend-row")
+    .attr("title", d => globalColorDescByName.get(d) || "");
 
   rows.append("span")
     .attr("class", "legend-swatch")
@@ -194,29 +272,22 @@ function focusNodeForModal(node) {
 // -------- Data loading --------
 
 function loadAndRender(coordsPath, colorBy) {
-  Promise.all([
-    d3.csv(coordsPath),
-    d3.csv("data/philosophers.csv"),
-    d3.csv("data/details.csv")
-  ]).then(([coords, philosophers, details]) => {
-    const nameById = new Map(philosophers.map(d => [d.ID, d.Name]));
-    const detailsById = new Map(details.map(d => [d.ID, d]));
-
+  d3.csv(coordsPath).then(coords => {
     const nodes = coords.map(d => {
       const id = d.ID;
-      const detail = detailsById.get(id) || {};
+      const philosopher = philosophersById.get(id) || {};
       const x0 = +d.x;
       const y0 = +d.y;
       return {
         ID: id,
-        Name: nameById.get(id) || id,
+        Name: philosopher.Name || id,
         x: x0,
         y: y0,
         x0,
         y0,
         targetX: null,
         targetY: null,
-        detail
+        philosopher
       };
     });
 
@@ -332,19 +403,16 @@ function shortName(name) {
 }
 
 function rawColorValueForNode(d, field) {
-  const raw = d.detail[field] || "Unknown";
-  if (raw === "Unknown") return raw;
+  const value = primaryValue(d.ID, field);
+  return value ? value.Name : "Unknown";
+}
 
-  // Special handling for PrimaryTopics: take just the first topic
-  if (field === "PrimaryTopics") {
-    const parts = raw.split(";")
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-    return parts.length > 0 ? parts[0] : "Unknown";
-  }
-
-  // Default: use the raw field as-is
-  return raw;
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function updateSelectionHighlight() {
@@ -361,29 +429,35 @@ function updateSelectionHighlight() {
     });
 }
 
+function renderModalDimensionRows(philosopherId) {
+  return dimensionsManifest.map(entry => {
+    const values = allValues(philosopherId, entry.key);
+    const valueHtml = values.length
+      ? values.map(v => `<span title="${escapeHtml(v.Description)}">${escapeHtml(v.Name)}</span>`).join(", ")
+      : "—";
+    return `<p><strong>${escapeHtml(entry.label)}:</strong> ${valueHtml}</p>`;
+  }).join("\n");
+}
+
 // Modal
 function showModal(d) {
   const overlay = document.getElementById("modal-overlay");
   const titleEl = document.getElementById("modal-title");
   const contentEl = document.getElementById("modal-content");
 
-  const det = d.detail || {};
+  const phil = d.philosopher || {};
 
   titleEl.textContent = d.Name;
 
   contentEl.innerHTML = `
-    <p><strong>Era:</strong> ${det["Era"] || ""}</p>
-    <p><strong>Civilization/Tradition:</strong> ${det["Civilization/Tradition"] || ""}</p>
-    <p><strong>Region:</strong> ${det["Region"] || ""}</p>
-    <p><strong>School/Movement:</strong> ${det["School/Movement"] || ""}</p>
-    <p><strong>Primary Topics:</strong> ${det["PrimaryTopics"] || ""}</p>
-    <p><strong>Birth – Death:</strong> ${det["BirthYear"] || ""} – ${det["DeathYear"] || ""}</p>
+    ${renderModalDimensionRows(d.ID)}
+    <p><strong>Birth – Death:</strong> ${escapeHtml(phil["BirthYear"])} – ${escapeHtml(phil["DeathYear"])}</p>
     <h3>Core Teachings</h3>
-    <p>${det["CoreTeachings"] || ""}</p>
+    <p>${escapeHtml(phil["CoreTeachings"])}</p>
     <h3>Historical Context</h3>
-    <p>${det["HistoricalContext"] || ""}</p>
+    <p>${escapeHtml(phil["HistoricalContext"])}</p>
     <h3>Key Works</h3>
-    <p>${det["KeyWorks"] || ""}</p>
+    <p>${escapeHtml(phil["KeyWorks"])}</p>
   `;
 
   focusNodeForModal(d);
@@ -535,10 +609,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Initial render
-  const initialMap = mapSelect.value;
-  const initialColor = colorSelect.value;
-  loadAndRender(initialMap, initialColor);
+  // Populate the "Color by" dropdown from the dimension manifest, then do the
+  // initial render once philosophers + dimension data are cached in memory.
+  loadStaticData().then(() => {
+    if (colorSelect) {
+      colorSelect.innerHTML = "";
+      dimensionsManifest.forEach(entry => {
+        const option = document.createElement("option");
+        option.value = entry.key;
+        option.textContent = entry.label;
+        colorSelect.appendChild(option);
+      });
+      if (dimensionsManifest.some(e => e.key === DEFAULT_COLOR_BY_KEY)) {
+        colorSelect.value = DEFAULT_COLOR_BY_KEY;
+      }
+    }
+
+    const initialMap = mapSelect.value;
+    const initialColor = colorSelect.value;
+    loadAndRender(initialMap, initialColor);
+  }).catch(err => {
+    console.error("Error loading dimensional data:", err);
+  });
 
   // When map changes
   mapSelect.addEventListener("change", () => {

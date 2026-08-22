@@ -1,0 +1,16 @@
+ID,Name,Description
+ES1,Rationalism,"The view that reason and a priori argument, rather than sense experience, are the primary route to certain knowledge."
+ES2,Logical / Analytic Method,"Knowledge pursued through formal logic, precise conceptual analysis, and careful attention to language and argument structure."
+ES3,Faith / Scripture / Contemplative Insight,"Knowledge grounded in religious faith, scripture, revelation, or direct contemplative or meditative insight."
+ES4,Empiricism,The view that knowledge derives primarily from sense experience and observation rather than innate ideas.
+ES5,Critical / Social Theory Method,"Knowledge pursued through critical analysis of ideology, power, and social structure, often with an emancipatory aim."
+ES6,Hermeneutics / Textual Interpretation,"Knowledge pursued through careful interpretation of texts, traditions, and their historical and cultural context."
+ES7,Pragmatism,The view that beliefs are justified by their practical workability and consequences rather than correspondence to fixed truth.
+ES8,Skepticism,"Systematic doubt about the possibility of certain knowledge, used as a method of inquiry or a philosophical conclusion."
+ES9,Intuitionism,"The view that some truths, especially moral truths, are known directly through rational or moral intuition rather than argument."
+ES10,Genealogical / Deconstructive Method,Knowledge pursued by tracing the historical origins of concepts or by unsettling the fixed oppositions within a text or tradition.
+ES11,Phenomenology,Knowledge pursued through careful first-person description of conscious experience as it presents itself.
+ES12,Dialectical Method,"Knowledge pursued through the back-and-forth of question, contradiction, and synthesis between opposing positions."
+ES13,Foundationalism / Constructivism,"The view that justified belief rests on secure foundational premises, or alternatively is actively constructed through reasoned agreement."
+ES14,Thought Experiments,Knowledge pursued through imagined scenarios designed to test and clarify our concepts and intuitions.
+ES15,Scientific Method,"Knowledge pursued through empirical observation, hypothesis, and experimental testing modeled on the natural sciences."

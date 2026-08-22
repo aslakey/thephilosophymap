@@ -1,0 +1,14 @@
+ID,Name,Description
+RO1,Secular / Atheist / Agnostic,"Philosophers who are non-religious, atheist, agnostic, or otherwise skeptical of or critical toward religious belief."
+RO2,Christian (Protestant),"Philosophers working within, or shaped by, the Protestant Christian tradition."
+RO3,Christian (Catholic),"Philosophers working within, or shaped by, the Roman Catholic Christian tradition."
+RO4,Jewish,"Philosophers working within, or shaped by, Jewish religious tradition and identity."
+RO5,Deist / Liberal Theist / Eclectic,"Philosophers holding an unorthodox, rationalist, or eclectic religious outlook that doesn't fit neatly into a single confessional tradition."
+RO6,Pagan / Ancient Polytheist,Philosophers working within the polytheistic religious world of pre-Christian Greek and Roman antiquity.
+RO7,Christian (Other/Generic),"Philosophers identified with Christianity in a general sense, without a specific confessional affiliation given."
+RO8,Buddhist,"Philosophers working within, or shaped by, Buddhist religious tradition."
+RO9,Confucian / East Asian Traditional,Philosophers working within Confucian ritual and ancestral traditions of East Asia.
+RO10,Muslim,"Philosophers working within, or shaped by, Islamic religious tradition."
+RO11,Hindu,"Philosophers working within, or shaped by, Hindu religious tradition."
+RO12,Daoist / East Asian Traditional,Philosophers working within Daoist religious and cosmological tradition.
+RO13,Jain,"Philosophers working within, or shaped by, Jain religious tradition."
