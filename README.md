@@ -1,4 +1,3 @@
-```markdown
 # Map of Philosophy: Reader Overview
 
 This project is a guided map of philosophical thought across time, place, and tradition. It is designed to help readers see the big picture first, then move into specific thinkers, ideas, and debates.
@@ -48,14 +47,14 @@ The web app currently shows two complementary map types, each built from a diffe
 - Projection: reduce those vectors to 2D (for plotting) and export coordinates used by the frontend.
 
 2. **Semantic Map (Text-Based)**
-- Source data: each philosopher's teaching summary (the `CoreTeachings` overview in `details.csv`).
+- Source data: each philosopher's teaching summary (the `CoreTeachings` field in `philosophers.csv`).
 - Method: generate OpenAI sentence embeddings for each teaching summary.
 - Embedding: each philosopher gets a vector based on semantic similarity of ideas, language, and themes.
 - Projection: reduce vectors to 2D (for example with t-SNE or UMAP) and export coordinates for visualization.
 
 In short: the influence map groups thinkers by **historical/intellectual linkage**, while the semantic map groups them by **conceptual similarity in their teachings**.
 
-Generated coordinate files are stored under `web/data/` (for example `coords_node2vec_tsne.csv`, `coords_semantic_tsne.csv`, and `coords_semantic_umap.csv`), and are consumed by `web/main.js` for rendering.
+Generated coordinate files are stored under `docs/data/` (for example `coords_node2vec_tsne.csv`, `coords_semantic_tsne.csv`, and `coords_semantic_umap.csv`), and are consumed by `docs/main.js` for rendering.
 
 ---
 
@@ -80,190 +79,185 @@ I had to do this for older mac:
 Freeze requirements:
 `uv pip freeze > requirements.txt`
 
+### Checks (lint, tests, validation)
 
+Install the (minimal) dev dependencies, then run the three gates:
+
+```bash
+pip install -r requirements-dev.txt   # or: make install-dev
+make check                            # ruff + pytest + validate
+```
+
+`make check` is exactly what CI runs on every pull request
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), so a green local run
+means a green PR. The gates individually:
+
+```bash
+make lint        # ruff check .
+make test        # pytest
+make validate    # python scripts/validate.py
+make report      # python scripts/validate.py --report (category counts)
+```
+
+Validation is the important one: the site is a static read of `docs/data/`, so
+a dangling ID never fails at build time -- it just renders a broken or invisible
+philosopher. `validate.py` catches that before it ships.
+
+Tests run against a throwaway dataset in a temp directory and never touch
+`docs/data/`; a guard in `tests/conftest.py` fails the suite if they do.
+Contributor and agent conventions live in [`AGENTS.md`](AGENTS.md).
 
 ## Data Structure Overview
 
-The project uses three main tables:
+All data lives under `docs/data/` as plain CSV/JSON so it's directly servable
+by GitHub Pages with no build step. The project uses a small star schema:
 
-1. **Philosophers** – identity only (for stable IDs)  
-2. **PhilosopherDetails** – descriptive fields for each philosopher  
-3. **Relations** – influence graph between philosophers  
+1. **`philosophers.csv`** – the fact table: identity + narrative fields for each philosopher.
+2. **`dimensions/` + `links/`** – ten categorical "dimensions" (Region, Era, School/Movement, ...), each with its own described vocabulary and a link table connecting philosophers to it.
+3. **`relations.csv`** – the influence graph between philosophers (unchanged from before).
 
-This separation makes it easier to maintain IDs, update descriptions, and build visualizations.
+This replaces an earlier approach where every categorical field was free
+text on a single `details.csv`, cleaned up after the fact with regex
+classifiers. Now every category a philosopher can be tagged with already
+exists, by name, with a written description, in a dimension table --
+new data is validated against that vocabulary instead of drifting into new
+ad hoc phrasing.
 
 ---
 
-## 1. Philosophers Table
+## 1. `philosophers.csv` (fact table)
 
-**Purpose:** a minimal lookup of all philosophers with stable IDs.
+**Purpose:** identity and narrative fields for each philosopher. All categorical/dimensional data has moved out to the dimension tables below.
 
 **Columns**
 
-1. `ID`  
+1. `ID` – short unique ID (e.g. `P001`, `P002`), used as the primary key everywhere else.
 2. `Name`
-
-**Examples**
-
-- `P003,Aristotle`  
-- `P029,Immanuel Kant`  
-- `P074,Nāgārjuna`  
-- `P101,Siddhārtha Gautama (the Buddha)`
+3. `BirthYear` / `DeathYear` – integer years; negative for BCE (e.g. `-384` for 384 BCE). Can be blank or approximate.
+4. `CoreTeachings` – 3-4 sentences: key doctrines, questions, and characteristic methods. The "core description" a reader sees first.
+5. `HistoricalContext` – 2-3 sentences on when/where they lived, historical background, and roles they played.
+6. `KeyWorks` – 2-5 titles, `;`-separated (e.g. `Nicomachean Ethics;Metaphysics;Politics`).
+7. `Tags` – free-form `;`-separated keywords for anything that doesn't fit elsewhere.
 
 ---
 
-## 2. PhilosopherDetails Table
+## 2. Dimensional data model (`dimensions/` + `links/`)
 
-**Purpose:** the main descriptive schema for profiles, used for reading, search, and filtering.
+**Purpose:** a controlled vocabulary for every categorical field, each with an ID, a Name, and a written Description -- instead of free text.
+
+There are 10 dimensions, declared in the manifest at
+[`docs/data/dimensions/manifest.json`](docs/data/dimensions/manifest.json):
+`region`, `civilization`, `era`, `school_movement`, `primary_topic`,
+`metaphysical_stance`, `epistemological_stance`, `ethical_orientation`,
+`political_orientation`, `religious_orientation`. The manifest is the single
+source of truth both scripts and the frontend read -- adding a dimension
+there is enough to expose it as a new "Color by" option in the UI.
+
+For each dimension `<key>` there are two files:
+
+- **`dimensions/<key>.csv`** – the vocabulary: `ID, Name, Description`. IDs are prefixed per dimension (`SM1`, `RG3`, ...) so a stray ID in the wrong link file is instantly visually wrong.
+- **`links/<key>_links.csv`** – `PhilosopherID, DimensionID, Rank`. A philosopher can link to multiple rows in a dimension (e.g. `primary_topic` = Ethics + Political Philosophy); `Rank=1` is the *primary* value, used for map coloring and as the first value shown in the UI.
+
+```mermaid
+erDiagram
+    philosophers {
+        string ID
+        string Name
+    }
+    dimension_table {
+        string ID
+        string Name
+        string Description
+    }
+    link_table {
+        string PhilosopherID
+        string DimensionID
+        int Rank
+    }
+    philosophers ||--o{ link_table : "has"
+    link_table }o--|| dimension_table : "references"
+```
+
+### Managing dimensions and philosophers
+
+Everything below keeps the data in a state that passes `scripts/validate.py` -- prefer these over hand-editing CSVs.
+
+```bash
+# Referential integrity checks + per-dimension category counts
+python scripts/validate.py --report
+
+# Inspect / edit a dimension's vocabulary
+python scripts/manage_dimensions.py list primary_topic
+python scripts/manage_dimensions.py add primary_topic --name "Philosophy of Language" --description "..."
+python scripts/manage_dimensions.py edit primary_topic --id PT7 --description "..."
+python scripts/manage_dimensions.py rename primary_topic --id PT7 --name "New Name"
+python scripts/manage_dimensions.py merge primary_topic --from PT16 --into PT7   # reassigns links, re-ranks, removes source
+python scripts/manage_dimensions.py remove primary_topic --id PT16 [--force]     # --force also deletes referencing links
+
+# Add/edit/remove a philosopher (dimension values given by name, resolved to IDs)
+python scripts/manage_philosophers.py add --spec new_philosopher.json
+python scripts/manage_philosophers.py edit --id P042 --spec patch.json
+python scripts/manage_philosophers.py remove --id P042 [--force]                # --force also strips relations.csv references
+```
+
+`manage_philosophers.py`'s spec file lists dimension values **by name**, e.g.
+`"primary_topic": ["Ethics", "Political Philosophy"]` (order sets `Rank`,
+so the first entry is primary). Unknown category names are rejected by
+default -- this is what actually enforces the controlled vocabulary, so new
+philosophers can't silently reintroduce free-text drift. Pass
+`--allow-new-categories` to create an unknown category inline (it gets a
+`TODO` placeholder description you should then edit via `manage_dimensions.py`).
+
+The spec can also set influence relations by **Name or ID**, e.g.
+`"influenced_by": ["Aristotle", "P010"]` / `"influenced": [...]`. This fully
+replaces that direction's edges in `relations.csv` for the philosopher being
+added/edited, and the reverse edge is kept in sync automatically on the
+referenced philosophers' own rows (e.g. `"influenced_by": ["Aristotle"]` also
+adds the new philosopher to Aristotle's `InfluencedIDs`).
+
+### Placeholder map coordinates for new philosophers
+
+`add` also assigns a rough starting position on all three map views
+(`coords_semantic_tsne.csv`, `coords_semantic_umap.csv`,
+`coords_node2vec_tsne.csv`) so a new philosopher isn't simply invisible on
+the map: it finds the existing philosopher with the most overlapping
+dimension categories (Jaccard similarity across all 10 dimensions) and
+places the new philosopher at that neighbor's coordinates, with a small
+random jitter so the two points don't exactly overlap. This is a naive
+placeholder, not a real embedding -- it doesn't call any API or touch the
+underlying semantic/network vectors. For a precise position once you have
+enough new philosophers to justify it, rerun `notebooks/semantics2vec.ipynb`
+and `notebooks/node2vec.ipynb` to regenerate the coords files from scratch.
+`remove` cleans up a philosopher's row from all three coords files (and
+`validate.py` checks that every philosopher has a row in each one).
+
+Shared CSV I/O for all of the above lives in `scripts/lib/data_model.py`. The
+one-time migration that produced this layout from the old free-text
+`details.csv` is recorded in `scripts/migrations/0001_split_into_dimension_tables.py`.
+
+---
+
+## 3. `relations.csv` (Influence Graph)
+
+**Purpose:** represent the influence network between philosophers using IDs from `philosophers.csv`. Unchanged by the dimensional data model above.
 
 **Columns**
 
-1. `ID`  
-2. `BirthYear`  
-3. `DeathYear`  
-4. `Region`  
-5. `Civilization/Tradition`  
-6. `Era`  
-7. `School/Movement`  
-8. `CoreTeachings`  
-9. `HistoricalContext`  
-10. `PrimaryTopics`  
-11. `MetaphysicalStance`  
-12. `EpistemologicalStance`  
-13. `EthicalOrientation`  
-14. `PoliticalOrientation`  
-15. `ReligiousOrientation`  
-16. `KeyWorks`  
-17. `Tags`
+1. `ID` – philosopher ID (e.g. `P029` for Kant).
+2. `InfluencedByIDs` – a `;`-separated list of IDs of earlier or foundational figures who clearly influenced this philosopher's thought **within this dataset** (e.g. `P023;P025;P027;P028`).
+3. `InfluencedIDs` – a `;`-separated list of IDs of later philosophers in the dataset significantly influenced by this thinker.
 
-### Column Explanations
-
-**1. ID**  
-- Short unique ID (e.g. `P001`, `P002`).  
-- Used as the primary key and to link with other tables.  
-- Join this to the `ID` in the **Philosophers** table to recover the name.
-
-**2–3. BirthYear / DeathYear**  
-- Integer years; use negative for BCE (e.g. `-384` for 384 BCE).  
-- Can be left blank or approximate if dates are uncertain.
-
-**4. Region**  
-- Broad geographic category, useful for map‑based views:  
-  - `Greece`, `China`, `India`, `Europe`, `Middle East`, `Africa`, `Latin America`, `North America`, `Japan`, etc.
-
-**5. Civilization/Tradition**  
-- Cultural‑intellectual tradition, e.g.:  
-  - `Ancient Greek`, `Classical Chinese`, `Indian Buddhist`, `Indian Hindu`, `Islamic`, `Jewish`, `Scholastic`, `Modern European`, `Analytic`, `Continental`, `African`, `Latin American`, etc.  
-- Good for color‑coding traditions.
-
-**6. Era**  
-- Coarse time period for filtering:  
-  - `Ancient`, `Classical`, `Medieval`, `Renaissance`, `Early Modern`, `19th Century`, `20th Century`, `Contemporary`.
-
-**7. School/Movement**  
-- More specific philosophical affiliation, e.g.:  
-  - `Platonism`, `Aristotelianism`, `Stoicism`, `Epicureanism`, `Neoplatonism`  
-  - `Confucianism`, `Daoism`, `Legalism`, `Neo‑Confucianism`, `Zen`  
-  - `Vedānta`, `Madhyamaka`, `Nyāya`, `Jain`  
-  - `Rationalism`, `Empiricism`, `Kantian`, `Utilitarianism`, `Marxism`, `Existentialism`  
-  - `Phenomenology`, `Pragmatism`, `Analytic Philosophy`, `Critical Theory`, `Post‑structuralism`, `Feminist Philosophy`, etc.  
-- Allow multiple values separated by `;` (e.g. `Existentialism; Phenomenology`).
-
-**8. CoreTeachings**  
-- 3–4 sentences in plain text.  
-- Concise but content‑rich summary of what the philosopher is known for:
-  - Key doctrines, questions, and characteristic methods.  
-- This is the “core description” a reader sees first.
-
-**9. HistoricalContext**  
-- 2–3 sentences on:  
-  - When and where they lived.  
-  - Major historical events and social background.  
-  - Roles they played (e.g. tutor to Alexander the Great, monk, civil servant, activist).  
-- Focus on how context shaped their thought (wars, empires, religious conflict, industrialization, decolonization, etc.).
-
-**10. PrimaryTopics**  
-- Controlled vocabulary; 3–7 items, separated by `;`. For example:  
-  - `Metaphysics; Epistemology; Ethics; Political Philosophy; Philosophy of Mind; Aesthetics; Philosophy of Religion; Logic; Philosophy of Language; Social Theory; Feminist Theory; Critical Race Theory; Philosophy of Science; Philosophy of History`.  
-- Ideal for topic‑based filtering and color‑coding.
-
-**11. MetaphysicalStance**  
-- Short label for their general metaphysical orientation, e.g.:  
-  - `Materialism`, `Idealism`, `Dualism`, `Monism`, `Platonism`, `Aristotelian Realism`, `Phenomenology`, `Skepticism`, `Nondualism`, `Theism`, `Atheism`, `Agnostic`, `Process Philosophy`, `Emptiness (Śūnyavāda)`.  
-- Multiple values can be separated by `;` when needed.
-
-**12. EpistemologicalStance**  
-- High‑level categories, such as:  
-  - `Rationalism`, `Empiricism`, `Skepticism`, `Pragmatism`, `Phenomenology`, `Intuitionism`, `Mystical Insight`, `Critical Theory (knowledge/power)`.  
-- Multiple values allowed (e.g. `Empiricism; Skepticism`).
-
-**13. EthicalOrientation**  
-- Short descriptors for their ethics, for comparison and clustering, e.g.:  
-  - `Virtue Ethics`, `Deontology`, `Consequentialism`, `Utilitarianism`, `Care Ethics`, `Eudaimonism`, `Asceticism`, `Perfectionism`, `Existential Ethics`, `Bodhisattva Ethics`, `Divine Command`, `Natural Law`, `No Systematic Ethics`.
-
-**14. PoliticalOrientation**  
-- Captures broad political leanings or models, e.g.:  
-  - `Authoritarian`, `Liberal`, `Libertarian`, `Socialist`, `Communist`, `Republican (classical)`, `Democrat (broad)`, `Conservative`, `Anarchist`, `Revolutionary`, `Reformist`, `Anti‑colonial`, `Monarchist`, `Theocratic`, `Not Primarily Political`.
-
-**15. ReligiousOrientation**  
-- Short tags for religious background or outlook, such as:  
-  - `Christian`, `Catholic`, `Protestant`, `Jewish`, `Muslim`, `Hindu`, `Buddhist`, `Jain`, `Daoist`, `Confucian`, `Skeptical of Religion`, `Atheist`, `Agnostic`, `Mystic`, `Syncretic`.
-
-**16. KeyWorks**  
-- 2–5 titles, separated by `;`.  
-- Use standard English titles where possible (original titles can be added later).  
-  - Example: `Nicomachean Ethics; Metaphysics; Politics`.
-
-**17. Tags**  
-- Free‑form keywords for anything that doesn’t neatly fit elsewhere; `;`‑separated.  
-- For example: `Tutor of Alexander the Great; Lyceum; Peripatetic`, or `Decolonial; Race; Psychoanalysis`.
+You can either maintain both directions manually, or treat `InfluencedByIDs`
+as primary and generate `InfluencedIDs` programmatically as the reverse edges.
 
 ---
 
-## 3. Relations Table (Influence Graph)
+## 4. Using the Data for Filtering and Visualization
 
-**Purpose:** represent the influence network between philosophers using IDs from the **Philosophers** table.
+For search, filtering, and visual exploration:
 
-**Columns**
+- **From `philosophers.csv`** – narrative fields (`CoreTeachings`, `HistoricalContext`, `KeyWorks`, `Tags`) for reading and full-text search.
+- **From the dimension tables** – any of the 10 dimensions (`region`, `civilization`, `era`, `school_movement`, `primary_topic`, `metaphysical_stance`, `epistemological_stance`, `ethical_orientation`, `political_orientation`, `religious_orientation`) for coloring, topic filters, or faceted search. The frontend reads `dimensions/manifest.json` to auto-populate the "Color by" dropdown and resolve a philosopher's primary/secondary values via the corresponding link table.
+- **From `relations.csv`** – `InfluencedByIDs` / `InfluencedIDs` for building influence graphs, network diagrams, or "intellectual family trees."
 
-1. `ID`  
-2. `InfluencedByIDs`  
-3. `InfluencedIDs`
-
-### Column Explanations
-
-**1. ID**  
-- Philosopher ID (e.g. `P029` for Kant).  
-- This is the same ID used in the **Philosophers** and **PhilosopherDetails** tables.
-
-**2. InfluencedByIDs**  
-- A `;`‑separated list of IDs of earlier or foundational figures who clearly influenced this philosopher’s thought **within this dataset**.  
-  - Example: for Kant, something like: `P023;P025;P027;P028`.
-
-**3. InfluencedIDs**  
-- A `;`‑separated list of IDs of later philosophers in the dataset who were significantly influenced by this thinker.  
-  - Example: for Plato, `P003;P009;P010;P011;...`.
-
-You can either:
-
-- Maintain both directions manually, or  
-- Treat `InfluencedByIDs` as primary and generate `InfluencedIDs` programmatically as the reverse edges.
-
----
-
-## 4. Using the Tables for Filtering and Visualization
-
-For search, filtering, and visual exploration, the most useful fields are:
-
-- **From PhilosopherDetails**  
-  - `Civilization/Tradition` – color by tradition or lineage.  
-  - `Era` – timeline placement or time‑slider filters.  
-  - `PrimaryTopics` – topic filters (e.g. “show everyone focused on ethics and political philosophy”).  
-  - `School/Movement` – cluster by school (e.g. Stoics, Marxists, Neo‑Confucians).  
-  - `MetaphysicalStance`, `EpistemologicalStance`, `EthicalOrientation`, `PoliticalOrientation`, `ReligiousOrientation` – for more advanced filtering or faceted search.  
-  - `Region` – map views (geographical origin).
-
-- **From Relations**  
-  - `InfluencedByIDs` / `InfluencedIDs` – building influence graphs, network diagrams, or “intellectual family trees.”
-
-Together, these tables define the structure behind the “map of philosophy” and support both a readable guide and rich visualizations.
+Together, these files define the structure behind the "map of philosophy" and support both a readable guide and rich visualizations.

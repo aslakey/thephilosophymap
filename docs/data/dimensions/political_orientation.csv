@@ -1,0 +1,19 @@
+ID,Name,Description
+PO1,Apolitical / Not Systematically Political,Philosophers who did not develop a systematic political theory or were primarily focused outside of politics.
+PO2,Liberal,"Political thought centered on individual rights, limited government, and freedom of thought, speech, and commerce."
+PO3,Monarchist / Elitist / Advises Rulers,"Political thought favoring rule by a monarch or qualified elite, often taking the form of advice offered to rulers."
+PO4,Democratic / Republican,"Political thought favoring self-government, popular sovereignty, and constitutional or republican forms of rule."
+PO5,Religious / Theocratic,"Political thought grounding legitimate authority in religious law, doctrine, or ecclesiastical institutions."
+PO6,Radical Left / Revolutionary,"Political thought favoring fundamental, often revolutionary transformation of existing social and economic structures."
+PO7,Socialist / Social Democratic,"Political thought favoring collective ownership, economic redistribution, and a strong social welfare state."
+PO8,Anti-authoritarian / Anti-totalitarian,"Political thought centrally concerned with resisting authoritarian, fascist, or totalitarian concentrations of power."
+PO9,Reformist / Moderate,"Political thought favoring gradual, incremental improvement of existing institutions rather than revolution or radical change."
+PO10,Cosmopolitan / Globalist,"Political thought favoring international or global forms of community, justice, and obligation beyond the nation-state."
+PO11,Authoritarian / Strong State,"Political thought favoring a strong, centralized state with extensive power over social and individual life."
+PO12,Communist / Marxist,Political thought favoring the abolition of private property and class society along Marxist lines.
+PO13,Anti-colonial / Pan-African,Political thought centered on resisting colonialism and imperialism and on African political unity and self-determination.
+PO14,Feminist / Queer Politics,Political thought centered on gender equality and the critique of patriarchal and heteronormative power structures.
+PO15,Communitarian / Critical of Liberalism,"Political thought emphasizing community, tradition, and shared goods against what it sees as excessive liberal individualism."
+PO16,Political Realism,Political thought emphasizing the practical realities of power over idealized moral or institutional theorizing.
+PO17,Libertarian,"Political thought favoring minimal government and maximal individual liberty, especially in economic life."
+PO18,Cultural Nationalist,Political thought centered on the cultural distinctiveness and self-determination of a particular nation or people.

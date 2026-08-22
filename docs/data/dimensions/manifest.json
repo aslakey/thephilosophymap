@@ -1,0 +1,62 @@
+[
+  {
+    "key": "region",
+    "label": "Region",
+    "file": "dimensions/region.csv",
+    "linksFile": "links/region_links.csv"
+  },
+  {
+    "key": "civilization",
+    "label": "Civilization / Tradition",
+    "file": "dimensions/civilization.csv",
+    "linksFile": "links/civilization_links.csv"
+  },
+  {
+    "key": "era",
+    "label": "Era",
+    "file": "dimensions/era.csv",
+    "linksFile": "links/era_links.csv"
+  },
+  {
+    "key": "school_movement",
+    "label": "School / Movement",
+    "file": "dimensions/school_movement.csv",
+    "linksFile": "links/school_movement_links.csv"
+  },
+  {
+    "key": "primary_topic",
+    "label": "Primary Topics",
+    "file": "dimensions/primary_topic.csv",
+    "linksFile": "links/primary_topic_links.csv"
+  },
+  {
+    "key": "metaphysical_stance",
+    "label": "Metaphysical Stance",
+    "file": "dimensions/metaphysical_stance.csv",
+    "linksFile": "links/metaphysical_stance_links.csv"
+  },
+  {
+    "key": "epistemological_stance",
+    "label": "Epistemological Stance",
+    "file": "dimensions/epistemological_stance.csv",
+    "linksFile": "links/epistemological_stance_links.csv"
+  },
+  {
+    "key": "ethical_orientation",
+    "label": "Ethical Orientation",
+    "file": "dimensions/ethical_orientation.csv",
+    "linksFile": "links/ethical_orientation_links.csv"
+  },
+  {
+    "key": "political_orientation",
+    "label": "Political Orientation",
+    "file": "dimensions/political_orientation.csv",
+    "linksFile": "links/political_orientation_links.csv"
+  },
+  {
+    "key": "religious_orientation",
+    "label": "Religious Orientation",
+    "file": "dimensions/religious_orientation.csv",
+    "linksFile": "links/religious_orientation_links.csv"
+  }
+]
