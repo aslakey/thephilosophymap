@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- viewport-fit=cover lets the layout use env(safe-area-inset-*) to clear the
+       notch and home indicator on iPhones. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Map of Philosophy</title>
 <script>
   // Applied before first paint so the page never flashes the wrong theme.
@@ -74,7 +76,12 @@
   #viz {
     width: 100vw;
     height: 100vh;
+    /* dvh tracks mobile browser chrome as it collapses; vh above is the fallback. */
+    height: 100dvh;
   }
+  /* The map owns its gestures, so the browser shouldn't also pan or zoom the page. */
+  #viz svg { touch-action: none; }
+  button, select, input { touch-action: manipulation; }
 
   /* ---------- Control bar ---------- */
 
@@ -302,9 +309,18 @@
   /* ---------- Map nodes ---------- */
 
   .node { cursor: pointer; }
-  .node circle {
+  .node circle.dot {
     stroke: var(--node-ring);
     transition: opacity 0.18s ease, stroke-width 0.18s ease;
+  }
+  /* A 10px dot is an unreliable finger target, so every node carries a larger
+     invisible one. It only accepts pointer events on touch devices, where the
+     nearest neighbour is often closer than a fingertip is wide; a mouse keeps
+     the precise target so neighbouring points stay individually clickable. */
+  .node-hit {
+    fill: transparent;
+    stroke: none;
+    pointer-events: none;
   }
   .nodes-layer { filter: drop-shadow(0 1px 2px var(--node-shadow)); }
   /* Labels sit inside the coloured circle, so they stay light in both themes. */
@@ -390,7 +406,10 @@
     display: none;
     align-items: stretch;
     justify-content: flex-end;
-    z-index: 20;
+    /* Above the legend (25). When the panel becomes a bottom sheet the two
+       occupy the same corner, and the legend would otherwise sit on top of the
+       philosopher's details. */
+    z-index: 28;
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
   }
@@ -519,6 +538,131 @@
     color: var(--text-muted);
   }
 
+  /* ---------- View sheet (phones) ---------- */
+
+  /* On a phone the map/colour/legend controls live behind this sheet so the
+     map keeps the screen. Both are hidden until the phone breakpoint. */
+  #view-button { display: none; }
+
+  #sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--overlay);
+    display: none;
+    align-items: flex-end;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  #sheet-overlay.is-open { display: flex; }
+  #sheet {
+    width: 100%;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-solid);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: var(--shadow-lg);
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(100%);
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #sheet-overlay.is-open #sheet { transform: translateY(0); }
+  #sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  #sheet-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  #sheet-header .close-btn { float: none; }
+  #sheet-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 16px 18px;
+  }
+  .sheet-section {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .sheet-section:last-child { border-bottom: none; }
+  .sheet-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  /* Controls are moved into the sheet rather than duplicated, so they need to
+     shed their compact desktop shape and go full width here. */
+  #sheet .segmented { width: 100%; }
+  #sheet .seg-btn { flex: 1; }
+  #sheet .control-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  #sheet .control-label select {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    font-size: 15px;
+    letter-spacing: normal;
+    text-transform: none;
+    font-weight: 400;
+  }
+  /* Inside the sheet the legend is a plain list; the panel chrome belongs to
+     the sheet itself. */
+  #sheet-legend #legend {
+    position: static;
+    width: 100%;
+    max-height: none;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  /* The Color by select sits directly above and already names the dimension,
+     so the legend's own heading would just say "Era" twice. */
+  #sheet-legend .legend-title { display: none; }
+  #sheet-actions { display: flex; gap: 10px; }
+  #sheet-actions .icon-btn { flex: 1; }
+
+  /* ---------- Touch and small screens ---------- */
+
+  /* Apple's 44px minimum. Applied by input type rather than width so a touch
+     laptop gets it too. */
+  @media (pointer: coarse) {
+    .node-hit { pointer-events: all; }
+    .icon-btn,
+    .seg-btn,
+    select,
+    input[type="text"] { min-height: 44px; }
+    .seg-btn { padding: 8px 14px; }
+    .close-btn { min-width: 44px; min-height: 44px; }
+    .legend-row {
+      min-height: 44px;
+      padding: 8px 6px;
+    }
+    .suggestion { padding: 11px 10px; }
+    #search-status button { min-width: 40px; min-height: 40px; }
+  }
+
   @media (max-width: 900px) {
     #controls {
       top: 8px;
@@ -532,6 +676,14 @@
       width: min(260px, 58vw);
       max-height: 36vh;
     }
+    .dim-label { min-width: 0; flex-basis: 100%; }
+    #about-modal { width: 90vw; padding: 1.25rem 1.25rem; }
+  }
+
+  /* The detail panel becomes a bottom sheet on narrow screens, but only when
+     there is height to spare. A phone held sideways is wide enough for the
+     desktop side panel and far too short for a sheet. */
+  @media (max-width: 900px) and (min-height: 481px) {
     #modal-overlay {
       align-items: flex-end;
       justify-content: stretch;
@@ -541,9 +693,76 @@
       height: min(72vh, 640px);
       border-top-left-radius: 18px;
       border-top-right-radius: 18px;
+      padding-bottom: calc(2.5rem + env(safe-area-inset-bottom));
     }
-    .dim-label { min-width: 0; flex-basis: 100%; }
-    #about-modal { width: 90vw; padding: 1.25rem 1.25rem; }
+  }
+
+  /* Compact chrome: narrow screens, and short ones too. A phone in landscape
+     is 852px wide but under 400px tall, where the full desktop bar would eat
+     nearly 40% of the height. */
+  @media (max-width: 640px), (max-height: 480px) {
+    /* The bar spans the top edge instead of floating, which is both steadier
+       under a thumb and much shorter than the centred desktop version. */
+    #controls {
+      top: 0;
+      left: 0;
+      right: 0;
+      transform: none;
+      width: 100%;
+      max-width: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      border-radius: 0 0 16px 16px;
+      padding: calc(8px + env(safe-area-inset-top)) 12px 10px;
+      gap: 8px;
+    }
+    #title { display: none; }
+    #control-row {
+      width: 100%;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+    /* These move into the sheet at this width. Hiding them by child selector
+       means they never flash in the bar first, and they stop being matched
+       once they have been moved. */
+    #control-row > .segmented,
+    #control-row > .control-label,
+    #control-row > #theme-button,
+    #control-row > #about-button { display: none; }
+    #search-container {
+      flex: 1;
+      min-width: 0;
+    }
+    #search-input {
+      width: 100%;
+      /* Anything under 16px makes iOS Safari zoom the page on focus. */
+      font-size: 16px;
+    }
+    #search-suggestions {
+      min-width: 0;
+      width: 100%;
+      max-width: none;
+      max-height: 50vh;
+    }
+    #view-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+    #search-status { width: 100%; }
+    /* Only the free-standing legend is hidden; the one inside the sheet is a
+       child of #sheet-legend, not of body. */
+    body > #legend { display: none; }
+    #about-modal {
+      width: 100%;
+      max-width: none;
+      max-height: 88vh;
+      border-radius: 18px 18px 0 0;
+      padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+    }
+    #about-overlay { align-items: flex-end; }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -571,6 +790,11 @@
         <div id="search-suggestions"></div>
       </div>
 
+      <!-- Phones only: opens the sheet holding the map, colour and legend controls. -->
+      <button id="view-button" class="icon-btn" type="button" aria-expanded="false" aria-controls="sheet" aria-label="View options">
+        <span aria-hidden="true">☰</span> View
+      </button>
+
       <button id="theme-button" class="icon-btn" type="button" title="Toggle light / dark" aria-label="Toggle light or dark theme">◐</button>
       <button id="about-button" class="icon-btn" type="button">About</button>
     </div>
@@ -583,6 +807,26 @@
 
   <div id="viz"></div>
   <div id="legend"></div>
+
+  <!-- Sheet contents are filled at runtime by moving the real controls in, so
+       there is only ever one map toggle, one colour picker and one legend. -->
+  <div id="sheet-overlay" aria-hidden="true">
+    <div id="sheet" role="dialog" aria-modal="true" aria-label="View options">
+      <div id="sheet-header">
+        <span id="sheet-title">Map of Philosophy</span>
+        <button id="sheet-close" class="close-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="sheet-body">
+        <div class="sheet-section">
+          <span class="sheet-label">Map</span>
+          <div id="sheet-map"></div>
+        </div>
+        <div class="sheet-section" id="sheet-color"></div>
+        <div class="sheet-section" id="sheet-legend"></div>
+        <div class="sheet-section" id="sheet-actions"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="modal-overlay">
     <div id="modal">
