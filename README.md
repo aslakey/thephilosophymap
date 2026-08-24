@@ -263,6 +263,21 @@ one-time migration that produced this layout from the old free-text
 
 **Purpose:** represent the influence network between philosophers using IDs from `philosophers.csv`. Unchanged by the dimensional data model above.
 
+---
+
+## Map coordinates and embeddings
+
+`coords_*.csv` files hold **only** `ID, x, y` — the 2D positions the map draws. The high-dimensional vectors those positions were reduced from live separately in `docs/data/embeddings/`:
+
+- `semantic_1536.csv` – OpenAI `text-embedding-3-small` over `CoreTeachings`
+- `influence_16.csv` – node2vec over the influence graph
+
+These used to be one file. Because the vectors were carried in an `embedding` column inside the coords, every visitor downloaded 3.1 MB to draw 101 points, and the same matrix was stored three times over. Splitting them took the semantic map's initial download from 3.1 MB to about 2.5 KB.
+
+`scripts/validate.py` enforces the split: a coords file with any column beyond `ID, x, y` is an error, since that is how the vectors crept in the first time. Nothing in the site currently fetches the embeddings; they are kept because regenerating them means paying for the API calls again, and because any future similarity feature reads straight from them.
+
+Embedding coverage is deliberately **not** required. A philosopher added with `manage_philosophers.py` gets a placeholder position but no vector, which is a normal state until the notebooks are rerun.
+
 **Columns**
 
 1. `ID` – philosopher ID (e.g. `P029` for Kant).
@@ -283,3 +298,23 @@ For search, filtering, and visual exploration:
 - **From `relations.csv`** – `InfluencedByIDs` / `InfluencedIDs` for building influence graphs, network diagrams, or "intellectual family trees."
 
 Together, these files define the structure behind the "map of philosophy" and support both a readable guide and rich visualizations.
+
+---
+
+## Search
+
+`docs/search.js` builds a lexical index in the browser at startup from data the page has already fetched, so search costs no extra download and needs no build step. It covers four kinds of result:
+
+- **philosopher** – name, short name, ID, tags, and the `CoreTeachings` / `HistoricalContext` prose
+- **work** – every entry in `KeyWorks`, attributed to its author (`Republic — work by Plato`)
+- **category** – every dimension value, resolving to everyone linked to it (`Empiricism — School / Movement, 5 philosophers`)
+- **prose** – matches inside the teaching text, shown with a highlighted snippet
+
+A result that names one philosopher zooms to them. A result that names several spotlights them and dims the rest, reusing the same opacity path as the legend filters, so the two compose: a search spotlight narrowed by a legend filter shows the intersection.
+
+Two details worth knowing:
+
+- **Queries are folded to ASCII**, so `Nagarjuna` finds `Nāgārjuna` and `Soren` finds `Søren Kierkegaard`. 18 of the 101 names contain non-ASCII characters, so this is the difference between those philosophers being findable or not. Folding uses Unicode decomposition plus an explicit table for letters like `ø` and `æ` that are distinct letters rather than an accented base.
+- **Ranking is best-field-wins**, with prose far below everything else so that searching `Plato` returns Plato rather than the many philosophers whose teachings discuss him. An exact category name outranks an exact tag, so a term that names a group returns the group.
+
+Searching a term with no matching category falls through to the people, which is often the right answer: there is no `Stoicism` category (School / Movement buckets those thinkers under "Ancient Greek & Roman"), so `Stoicism` returns Epictetus, Seneca, and Zeno.

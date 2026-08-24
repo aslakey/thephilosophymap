@@ -65,7 +65,8 @@ table (`dimensions/<key>.csv`: `ID, Name, Description`) and a link table
 (`links/<key>_links.csv`: `PhilosopherID, DimensionID, Rank`, where `Rank=1` is
 the primary value used for map colouring). `relations.csv` holds the influence
 graph, with both directions kept symmetric. The `coords_*.csv` files hold 2D
-positions for the three map views. All I/O goes through
+positions for the three map views (`ID, x, y` only), and `embeddings/*.csv`
+holds the source vectors those positions were reduced from. All I/O goes through
 [`scripts/lib/data_model.py`](scripts/lib/data_model.py) -- don't hand-roll CSV
 paths.
 
@@ -101,6 +102,22 @@ producing confusing git diffs.
 - **Dimension IDs are permanent.** `next_dimension_id` fills past the highest
   existing number rather than reusing gaps, so a deleted `RG2` is never
   reissued to a different category.
+- **Coords files are `ID,x,y` and nothing else.** The vectors they were reduced
+  from live in `docs/data/embeddings/`. `validate.py` fails on any extra column
+  and `save_coords()` drops one, because carrying vectors in the coords is how
+  the map's initial download became 3.1MB to draw 101 points. If you regenerate
+  coordinates from a frame that still has embeddings attached, the split is
+  preserved for you rather than silently undone.
+- **A new philosopher gets no embedding.** `add` copies a neighbour's *position*
+  but not their vector; sharing one would make the two identical to anything
+  measuring similarity. Missing vectors are a valid state and validation allows
+  them -- rerun the notebooks to fill them in.
+- **Search is built in the browser, from data already loaded.** `docs/search.js`
+  indexes names, works, tags, dimension values, and teaching prose at startup;
+  there is no index file to regenerate and no build step. Queries are folded to
+  ASCII, so adding a philosopher with diacritics needs nothing extra. If you add
+  a searchable field, add it to `buildSearchIndex` with a `kind` that exists in
+  `FIELD_SCORES`, and remember prose ranks last on purpose.
 - **`ShortName` is data, not a derived value.** It's the label on the map. When
   `add` omits `short_name`, it's seeded from `derive_short_name()` and the
   chosen value is printed -- check it. The heuristic handles parentheticals

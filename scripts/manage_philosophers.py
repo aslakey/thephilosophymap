@@ -68,7 +68,7 @@ Subcommands:
 
     remove --id P042 [--force]
         Remove a philosopher, all of their dimension links, and their row
-        from every coords_*.csv file. Their own relations.csv row is always
+        from every coords_*.csv and embeddings file. Their own relations.csv row is always
         removed; if other philosophers still reference them there, this
         refuses to proceed unless --force is given, in which case those
         references are stripped too.
@@ -91,13 +91,16 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.data_model import (  # noqa: E402
     COORDS_FILENAMES,
+    EMBEDDING_FILENAMES,
     PHILOSOPHER_COLUMNS,
     DataModelError,
     derive_short_name,
     dimension_keys,
+    embeddings_path,
     find_dimension_id_by_name,
     load_coords,
     load_dimension,
+    load_embeddings,
     load_links,
     load_philosophers,
     load_relations,
@@ -106,6 +109,7 @@ from lib.data_model import (  # noqa: E402
     resolve_philosopher_id,
     save_coords,
     save_dimension,
+    save_embeddings,
     save_links,
     save_philosophers,
     save_relations,
@@ -298,11 +302,14 @@ def nearest_neighbor_by_dimensions(new_dimension_ids: set[str], existing_sets: d
 
 
 def assign_placeholder_coordinates(new_id: str, neighbor_id: str) -> None:
-    """Naive placeholder positioning: copy the neighbor's coordinates (and
-    embedding, if the file has one) into a new row for new_id in every
-    coords_*.csv file, with a small random jitter so the two points don't
-    exactly overlap. This is not a real semantic/network embedding -- rerun
-    the notebooks under notebooks/ for a precise position."""
+    """Naive placeholder positioning: copy the neighbor's coordinates into a new
+    row for new_id in every coords_*.csv file, with a small random jitter so the
+    two points don't exactly overlap. This is not a real semantic/network
+    embedding -- rerun the notebooks under notebooks/ for a precise position.
+
+    No entry is written to docs/data/embeddings/. Copying the neighbour's vector
+    would make the two philosophers identical to anything that measures
+    similarity, which is a worse failure than simply having no vector yet."""
     rng = np.random.default_rng()
     for filename in COORDS_FILENAMES:
         df = load_coords(filename)
@@ -321,7 +328,7 @@ def assign_placeholder_coordinates(new_id: str, neighbor_id: str) -> None:
         new_x = float(neighbor_row["x"]) + rng.uniform(-1, 1) * COORD_JITTER_FRACTION * x_range
         new_y = float(neighbor_row["y"]) + rng.uniform(-1, 1) * COORD_JITTER_FRACTION * y_range
 
-        new_row = {col: neighbor_row[col] for col in df.columns}  # copies "embedding" too, if present
+        new_row = {col: neighbor_row[col] for col in df.columns}
         new_row["ID"] = new_id
         new_row["x"] = new_x
         new_row["y"] = new_y
@@ -383,6 +390,7 @@ def cmd_add(args):
         assign_placeholder_coordinates(new_id, neighbor_id)
         print("  (this is a rough placeholder, not a real embedding -- rerun notebooks/semantics2vec.ipynb "
               "and notebooks/node2vec.ipynb for a precise position once convenient)")
+        print("  (no vector was written to docs/data/embeddings/; the notebooks generate those)")
     else:
         print("No dimension categories given, so no placeholder map position was assigned. "
               "Add coordinates to coords_*.csv manually, or rerun the embedding notebooks.")
@@ -453,7 +461,17 @@ def cmd_remove(args):
         if len(remaining) != len(coords_df):
             save_coords(filename, remaining)
 
-    print(f"Removed [{args.id}] {name!r}, their dimension links, relations, and map coordinates.")
+    # A leftover vector would outlive the philosopher it describes, which
+    # validate.py reports as a dangling reference.
+    for filename in EMBEDDING_FILENAMES:
+        if not embeddings_path(filename).exists():
+            continue
+        emb_df = load_embeddings(filename)
+        remaining = emb_df[emb_df["ID"] != args.id]
+        if len(remaining) != len(emb_df):
+            save_embeddings(filename, remaining)
+
+    print(f"Removed [{args.id}] {name!r}, their dimension links, relations, map coordinates, and embeddings.")
 
 
 def build_parser():

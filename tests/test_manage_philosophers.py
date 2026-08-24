@@ -9,6 +9,7 @@ from lib.data_model import (
     COORDS_FILENAMES,
     load_coords,
     load_dimension,
+    load_embeddings,
     load_links,
     load_philosophers,
     load_relations,
@@ -92,10 +93,17 @@ class TestAdd:
         out = capsys.readouterr().out
         assert "P004" not in out.split("Nearest neighbor by shared categories:")[1].split("\n")[0]
 
-    def test_copies_extra_columns_from_neighbour(self, data_root, tmp_path):
+    def test_does_not_fabricate_an_embedding(self, data_root, tmp_path):
+        # The placeholder position is copied from a neighbour, but the vector is
+        # not: sharing one would make the two philosophers indistinguishable to
+        # anything measuring similarity, which is worse than having none.
         run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])
-        coords = load_coords("coords_semantic_tsne.csv")
-        assert coords[coords["ID"] == "P004"].iloc[0]["embedding"] == "0.1|0.2"
+        assert "embedding" not in load_coords("coords_semantic_tsne.csv").columns
+        assert "P004" not in set(load_embeddings("semantic_1536.csv")["ID"])
+
+    def test_missing_embedding_is_not_a_validation_error(self, data_root, tmp_path):
+        run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])
+        assert all_errors() == []
 
     def test_result_validates_clean(self, data_root, tmp_path):
         run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])

@@ -21,7 +21,9 @@ philosopher (no more, no less).
 
 Also checks that every philosopher has a row in every coords_*.csv map file
 (coords_semantic_tsne.csv, coords_semantic_umap.csv, coords_node2vec_tsne.csv)
--- a philosopher missing from a coords file is invisible on that map view.
+-- a philosopher missing from a coords file is invisible on that map view --
+and that those files carry only ID, x, y, since the source vectors they were
+reduced from belong in embeddings/ rather than in what the browser downloads.
 
 Usage:
     python scripts/validate.py             # run all checks, exit 1 on any failure
@@ -37,9 +39,14 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.data_model import (  # noqa: E402
+    COORDS_COLUMNS,
     COORDS_FILENAMES,
+    EMBEDDING_FILENAMES,
+    embeddings_dir,
+    embeddings_path,
     load_coords,
     load_dimension,
+    load_embeddings,
     load_links,
     load_manifest,
     load_philosophers,
@@ -156,12 +163,51 @@ def check_coords(philosopher_ids: set[str]) -> list[str]:
         if coords_df.empty or "ID" not in coords_df.columns:
             errors.append(f"[{filename}] file is missing or has no ID column")
             continue
+
+        # The map reads only x and y. A stray vector column here is how the file
+        # grew to 3MB before; it comes back the moment a notebook writes coords
+        # straight from a frame that still has embeddings attached.
+        extra_columns = [c for c in coords_df.columns if c not in COORDS_COLUMNS]
+        if extra_columns:
+            errors.append(
+                f"[{filename}] unexpected column(s) {extra_columns}; coords files are {COORDS_COLUMNS}. "
+                f"Source vectors belong in {embeddings_dir().name}/ -- see "
+                f"scripts/migrations/0003_split_embeddings_from_coords.py"
+            )
+
         missing = philosopher_ids - set(coords_df["ID"])
         if missing:
             errors.append(f"[{filename}] {len(missing)} philosopher(s) missing a coordinate row (invisible on this map view): {sorted(missing)}")
         extra = set(coords_df["ID"]) - philosopher_ids
         if extra:
             errors.append(f"[{filename}] {len(extra)} coordinate row(s) reference unknown philosopher ID: {sorted(extra)}")
+    return errors
+
+
+def check_embeddings(philosopher_ids: set[str]) -> list[str]:
+    """Check the source vectors, if present.
+
+    Coverage is deliberately not required: a philosopher added through the CLI
+    has a placeholder position and no real vector until the notebooks are
+    rerun, and that's a legitimate intermediate state rather than a broken one.
+    """
+    errors = []
+    for filename in EMBEDDING_FILENAMES:
+        if not embeddings_path(filename).exists():
+            continue
+        df = load_embeddings(filename)
+        if "ID" not in df.columns or "embedding" not in df.columns:
+            errors.append(f"[embeddings/{filename}] expected columns ID, embedding; found {list(df.columns)}")
+            continue
+
+        unknown = set(df["ID"]) - philosopher_ids
+        if unknown:
+            errors.append(
+                f"[embeddings/{filename}] {len(unknown)} vector(s) reference unknown philosopher ID: {sorted(unknown)}"
+            )
+        duplicates = df.loc[df["ID"].duplicated(), "ID"].tolist()
+        if duplicates:
+            errors.append(f"[embeddings/{filename}] duplicate IDs: {duplicates}")
     return errors
 
 
@@ -201,6 +247,7 @@ def main():
 
     all_errors.extend(check_relations(philosopher_ids))
     all_errors.extend(check_coords(philosopher_ids))
+    all_errors.extend(check_embeddings(philosopher_ids))
 
     print(f"\n{len(manifest)} dimensions checked across {len(philosophers)} philosophers.")
 

@@ -6,7 +6,8 @@ Data model
 docs/data/philosophers.csv            fact table: ID, Name, BirthYear, DeathYear,
                                        CoreTeachings, HistoricalContext, KeyWorks, Tags
 docs/data/relations.csv               unchanged: ID, InfluencedByIDs, InfluencedIDs
-docs/data/coords_*.csv                unchanged: ID, x, y
+docs/data/coords_*.csv                2D map positions only: ID, x, y
+docs/data/embeddings/*.csv            source vectors: ID, embedding
 
 docs/data/dimensions/manifest.json    THE CONTRACT: list of
                                        {key, label, file, linksFile}
@@ -84,13 +85,33 @@ def relations_path() -> Path:
 def coords_path(filename: str) -> Path:
     return data_dir() / filename
 
-# 2D map coordinate files. Each has an ID column plus x, y, and (for the
-# semantic ones) a raw embedding column -- see load_coords()/save_coords().
+
+def embeddings_dir() -> Path:
+    return data_dir() / "embeddings"
+
+
+def embeddings_path(filename: str) -> Path:
+    return embeddings_dir() / filename
+
+
+# 2D map coordinate files: ID, x, y and nothing else. The high-dimensional
+# vectors these were reduced from live in embeddings/ instead -- the frontend
+# only ever reads x and y, so carrying 1536 floats per row here meant shipping
+# 3MB to draw 101 points.
 COORDS_FILENAMES = [
     "coords_semantic_tsne.csv",
     "coords_semantic_umap.csv",
     "coords_node2vec_tsne.csv",
 ]
+COORDS_COLUMNS = ["ID", "x", "y"]
+
+# Source vectors, keyed by philosopher ID. Not currently fetched by the site;
+# kept because regenerating them means paying for embedding API calls again,
+# and any future similarity feature reads straight from here.
+EMBEDDING_FILENAMES = {
+    "semantic_1536.csv": "OpenAI text-embedding-3-small over CoreTeachings",
+    "influence_16.csv": "node2vec over the influence graph",
+}
 
 PHILOSOPHER_COLUMNS = [
     "ID", "Name", "ShortName", "BirthYear", "DeathYear",
@@ -291,11 +312,37 @@ def save_relations(df: pd.DataFrame) -> None:
 def load_coords(filename: str) -> pd.DataFrame:
     path = coords_path(filename)
     if not path.exists():
-        return pd.DataFrame(columns=["ID", "x", "y"])
+        return pd.DataFrame(columns=COORDS_COLUMNS)
     return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
 def save_coords(filename: str, df: pd.DataFrame) -> None:
+    """Write a coords file, dropping anything beyond ID/x/y.
+
+    Callers regenerating coordinates tend to hand over a frame that still has
+    the source vectors attached; writing those back would undo the split and
+    re-inflate the file the map downloads.
+    """
     path = coords_path(filename)
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False)
+    missing = [col for col in COORDS_COLUMNS if col not in df.columns]
+    if missing:
+        raise DataModelError(f"{filename} is missing required column(s): {missing}")
+    df[COORDS_COLUMNS].to_csv(path, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Source embedding vectors (docs/data/embeddings/*.csv)
+# ---------------------------------------------------------------------------
+
+def load_embeddings(filename: str) -> pd.DataFrame:
+    path = embeddings_path(filename)
+    if not path.exists():
+        return pd.DataFrame(columns=["ID", "embedding"])
+    return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+
+def save_embeddings(filename: str, df: pd.DataFrame) -> None:
+    path = embeddings_path(filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df[["ID", "embedding"]].to_csv(path, index=False)
