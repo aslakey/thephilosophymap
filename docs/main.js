@@ -1,12 +1,28 @@
 // main.js
 
-const width = window.innerWidth;
-const height = window.innerHeight;
+// Live viewport size. These follow the window rather than being captured once,
+// so rotating a phone or resizing a window re-lays out the map instead of
+// leaving it in a box the wrong shape.
+let width = window.innerWidth;
+let height = window.innerHeight;
+
 const NODE_RADIUS = 10;
+// The touch target around each node; roughly a fingertip, and well above the
+// 22px gap between the closest pair of points at default zoom.
+const NODE_HIT_RADIUS = 22;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 10;
 const LABEL_ZOOM_THRESHOLD = 2.2;
+// Phones start further from the map and can't hover for a tooltip, so labels
+// have to appear sooner or the map reads as anonymous dots.
+const LABEL_ZOOM_THRESHOLD_SMALL = 1.3;
 const MODAL_DESIRED_SCALE = 3;
+// These two must stay in step with the stylesheet's media queries, which is
+// why they are written once here and used for every layout decision.
+// Compact chrome covers narrow screens and short ones (a phone in landscape).
+const SMALL_SCREEN_QUERY = "(max-width: 640px), (max-height: 480px)";
+// The detail panel is a bottom sheet only where there is height for one.
+const DETAIL_SHEET_QUERY = "(max-width: 900px) and (min-height: 481px)";
 // Each dimension is a curated, described vocabulary of ~8-20 categories (see
 // docs/data/dimensions/manifest.json), so allow enough legend slots to show
 // them all without falling back to an "Other" bucket. Colours are generated to
@@ -44,6 +60,30 @@ let searchIndex = [];
 let searchMatchIDs = null;         // Set of IDs, or null when no search is active
 
 // -------- Colour --------
+
+// Phone layout is driven by the same breakpoint the stylesheet uses, so the
+// two can't disagree about when the sheet is in play.
+function isSmallScreen() {
+  return window.matchMedia(SMALL_SCREEN_QUERY).matches;
+}
+
+function detailPanelIsBottomSheet() {
+  return window.matchMedia(DETAIL_SHEET_QUERY).matches;
+}
+
+function labelZoomThreshold() {
+  return isSmallScreen() ? LABEL_ZOOM_THRESHOLD_SMALL : LABEL_ZOOM_THRESHOLD;
+}
+
+// Space the map layout keeps clear at the top for the control bar, which is
+// full-width on phones and would otherwise sit on top of the points.
+function topInset() {
+  return isSmallScreen() ? 96 : 50;
+}
+
+function edgeInset() {
+  return isSmallScreen() ? 28 : 50;
+}
 
 function isDarkTheme() {
   return document.documentElement.getAttribute("data-theme") === "dark";
@@ -246,9 +286,13 @@ function renderLegend() {
     .attr("class", "legend-title")
     .text(labelForDimensionKey(globalColorByField));
 
+  // Spotlighting is a hover effect, so on touch it simply isn't available and
+  // advertising it would be a lie.
   legend.append("div")
     .attr("class", "legend-hint")
-    .text("Hover to spotlight, click to filter");
+    .text(window.matchMedia("(hover: hover)").matches
+      ? "Hover to spotlight, click to filter"
+      : "Tap a category to filter");
 
   const rows = legend.selectAll(".legend-row")
     .data(legendDomain, d => d)
@@ -311,7 +355,7 @@ function updateNodeVisibility() {
 function recolorExistingNodes() {
   if (!globalColorScale || !globalColorByField) return;
 
-  d3.selectAll(".node circle")
+  d3.selectAll(".node circle.dot")
     .attr("fill", d => colorForCategory(colorCategoryForNode(d)));
 
   // Re-apply stroke logic so selected node stays highlighted.
@@ -325,10 +369,19 @@ function selectNode(node) {
   updateSelectionHighlight();
 }
 
+// Labels appear in bulk once zoomed in, but the selected node and any search
+// matches stay labelled at every zoom level: those are exactly the points the
+// reader has just asked to identify, and on a phone there is no hover tooltip
+// to fall back on.
 function updateLabelVisibility(zoomScale = 1) {
-  const showLabels = zoomScale >= LABEL_ZOOM_THRESHOLD;
+  const showLabels = zoomScale >= labelZoomThreshold();
   d3.selectAll(".node-label")
-    .style("opacity", showLabels ? 1 : 0);
+    .style("opacity", d => {
+      if (showLabels) return 1;
+      if (d.ID === selectedID) return 1;
+      if (searchMatchIDs && searchMatchIDs.has(d.ID)) return 1;
+      return 0;
+    });
 }
 
 // Utility: clear and recreate SVG
@@ -348,10 +401,99 @@ function initSvg() {
       currentTransform = event.transform;
       g.attr("transform", currentTransform);
       updateLabelVisibility(currentTransform.k);
+      updateHitRadius();
     });
 
   svg.call(zoomBehavior);
 }
+
+// The hit circles live inside the zoomed layer, so their radius is divided by
+// the zoom scale to keep them a constant size on screen. Without this they
+// would shrink as the reader zooms out -- precisely when the dots are smallest
+// and a tap is least precise.
+function updateHitRadius() {
+  if (!g) return;
+  g.selectAll(".node-hit").attr("r", NODE_HIT_RADIUS / (currentTransform.k || 1));
+}
+
+// The projection from source coordinates into the current viewport. Kept on
+// hand so a resize can both re-run it and translate the reader's position
+// through it.
+let layoutXScale = null;
+let layoutYScale = null;
+
+// Project the source coordinates into the current viewport. Kept separate from
+// createViz so a resize can re-run it without rebuilding every node.
+function applyLayoutTargets(nodes) {
+  if (!nodes.length) return;
+
+  const edge = edgeInset();
+  layoutXScale = d3.scaleLinear()
+    .domain(d3.extent(nodes, d => d.x0))
+    .range([edge, width - edge]);
+
+  layoutYScale = d3.scaleLinear()
+    .domain(d3.extent(nodes, d => d.y0))
+    .range([topInset(), height - edge]);
+
+  nodes.forEach(d => {
+    d.targetX = layoutXScale(d.x0);
+    d.targetY = layoutYScale(d.y0);
+  });
+}
+
+// Rotating a phone fires resize repeatedly, so the work is coalesced into the
+// next frame.
+//
+// A resize re-projects the whole layout, which would leave a zoomed-in reader
+// staring at empty space: their pan was computed against the old projection.
+// So the point at the centre of the screen is converted back into source
+// coordinates first, and the view is re-centred on that same point afterwards.
+// Zoom level is preserved throughout.
+let resizeFrame = null;
+
+function handleViewportResize() {
+  if (resizeFrame) cancelAnimationFrame(resizeFrame);
+
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null;
+
+    let anchor = null;
+    if (layoutXScale && layoutYScale && currentNodes.length) {
+      const [centreX, centreY] = currentTransform.invert([width / 2, height / 2]);
+      anchor = {
+        x0: layoutXScale.invert(centreX),
+        y0: layoutYScale.invert(centreY)
+      };
+    }
+
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    if (!svg) return;
+    svg.attr("width", width).attr("height", height);
+
+    if (!currentNodes.length) return;
+    applyLayoutTargets(currentNodes);
+    if (simulation) simulation.alpha(0.35).restart();
+
+    if (anchor && zoomBehavior) {
+      const k = currentTransform.k || 1;
+      svg.call(
+        zoomBehavior.transform,
+        d3.zoomIdentity
+          .translate(width / 2 - k * layoutXScale(anchor.x0), height / 2 - k * layoutYScale(anchor.y0))
+          .scale(k)
+      );
+    }
+
+    updateLabelVisibility(currentTransform.k);
+    updateHitRadius();
+  });
+}
+
+window.addEventListener("resize", handleViewportResize);
+window.addEventListener("orientationchange", handleViewportResize);
 
 // -------- Search + zoom to philosopher --------
 
@@ -420,8 +562,16 @@ function focusNodeForModal(node) {
   if (!node || !svg || !zoomBehavior) return;
 
   const desiredScale = Math.max(currentTransform.k || 1, MODAL_DESIRED_SCALE);
-  const targetScreenX = Math.max(140, Math.min(width * 0.33, width - 140));
-  const targetScreenY = height / 2;
+
+  // The node has to end up in whatever strip of map the detail panel leaves:
+  // above it when it's a bottom sheet, beside it when it's a side panel.
+  const sheet = detailPanelIsBottomSheet();
+  const targetScreenX = sheet
+    ? width / 2
+    : Math.max(140, Math.min(width * 0.33, width - 140));
+  const targetScreenY = sheet
+    ? Math.max(topInset() + NODE_RADIUS * 3, height * 0.22)
+    : height / 2;
 
   const tx = targetScreenX - desiredScale * node.x;
   const ty = targetScreenY - desiredScale * node.y;
@@ -468,30 +618,13 @@ function loadAndRender(coordsPath, colorBy) {
 function createViz(nodes, colorByField) {
   initSvg();
 
-  // Compute extents of original coordinates
-  const xExtent = d3.extent(nodes, d => d.x0);
-  const yExtent = d3.extent(nodes, d => d.y0);
-
-  const xScale = d3.scaleLinear()
-    .domain(xExtent)
-    .range([50, width - 50]);
-
-  const yScale = d3.scaleLinear()
-    .domain(yExtent)
-    .range([50, height - 50]);
-
   // 1) RANDOM INITIAL POSITIONS (for animation)
   nodes.forEach(d => {
     d.x = width * (0.2 + 0.6 * Math.random());   // random in central band
     d.y = height * (0.2 + 0.6 * Math.random());
   });
   // 2) SET TARGETS to the projected map layout (but don't overwrite x,y)
-  nodes.forEach(d => {
-    const sx = xScale(d.x0);
-    const sy = yScale(d.y0);
-    d.targetX = sx;
-    d.targetY = sy;
-  });
+  applyLayoutTargets(nodes);
 
   // Build and store color scale for this render.
   rebuildColorScale(colorByField);
@@ -513,7 +646,15 @@ function createViz(nodes, colorByField) {
       showModal(d);
     });
 
+  // Sits under the visible dot and only takes pointer events on touch (see
+  // .node-hit in the stylesheet), so tapping is forgiving without making
+  // neighbouring points harder to click with a mouse.
   node.append("circle")
+    .attr("class", "node-hit")
+    .attr("r", NODE_HIT_RADIUS / (currentTransform.k || 1));
+
+  node.append("circle")
+    .attr("class", "dot")
     .attr("r", NODE_RADIUS)
     .attr("stroke-width", 1.5)
     .attr("fill", d => getColor(d));
@@ -595,7 +736,7 @@ function escapeHtml(str) {
 function updateSelectionHighlight() {
   // Unselected nodes get their ring from CSS (--node-ring), which is what keeps
   // overlapping points readable; only the selection overrides it.
-  d3.selectAll(".node circle")
+  d3.selectAll(".node circle.dot")
     .attr("stroke-width", d => d.ID === selectedID ? 3.5 : 1.5)
     .attr("stroke", d => d.ID === selectedID ? accentColor() : null);
 }
@@ -668,6 +809,78 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  // -------- View sheet (phones) --------
+  //
+  // A phone screen can't spare the 153px the desktop control bar takes, so at
+  // the narrow breakpoint everything except search moves into a bottom sheet.
+  // The controls are moved, not cloned: one map toggle, one colour select and
+  // one legend exist at any time, so their handlers and state survive the trip
+  // and there is no second copy to keep in sync.
+  const sheetOverlay = document.getElementById("sheet-overlay");
+  const sheetClose = document.getElementById("sheet-close");
+  const viewButton = document.getElementById("view-button");
+  const controlRow = document.getElementById("control-row");
+  const searchContainer = document.getElementById("search-container");
+  const legendEl = document.getElementById("legend");
+  const colorLabel = colorSelect ? colorSelect.closest(".control-label") : null;
+  const smallScreen = window.matchMedia(SMALL_SCREEN_QUERY);
+
+  function openSheet() {
+    if (!sheetOverlay) return;
+    sheetOverlay.classList.add("is-open");
+    sheetOverlay.setAttribute("aria-hidden", "false");
+    if (viewButton) viewButton.setAttribute("aria-expanded", "true");
+  }
+
+  function closeSheet() {
+    if (!sheetOverlay) return;
+    sheetOverlay.classList.remove("is-open");
+    sheetOverlay.setAttribute("aria-hidden", "true");
+    if (viewButton) viewButton.setAttribute("aria-expanded", "false");
+  }
+
+  function sheetIsOpen() {
+    return !!sheetOverlay && sheetOverlay.classList.contains("is-open");
+  }
+
+  function placeControls() {
+    if (smallScreen.matches) {
+      document.getElementById("sheet-map").appendChild(mapSelect);
+      if (colorLabel) document.getElementById("sheet-color").appendChild(colorLabel);
+      if (legendEl) document.getElementById("sheet-legend").appendChild(legendEl);
+
+      const actions = document.getElementById("sheet-actions");
+      if (themeButton) actions.appendChild(themeButton);
+      if (aboutButton) actions.appendChild(aboutButton);
+      return;
+    }
+
+    // Back to the desktop bar in its original order.
+    controlRow.insertBefore(mapSelect, controlRow.firstChild);
+    if (colorLabel) controlRow.insertBefore(colorLabel, searchContainer);
+    if (themeButton) controlRow.appendChild(themeButton);
+    if (aboutButton) controlRow.appendChild(aboutButton);
+    if (legendEl) document.body.appendChild(legendEl);
+    closeSheet();
+  }
+
+  placeControls();
+  smallScreen.addEventListener("change", placeControls);
+
+  if (viewButton) {
+    viewButton.addEventListener("click", () => {
+      if (sheetIsOpen()) closeSheet();
+      else openSheet();
+    });
+  }
+  if (sheetClose) sheetClose.addEventListener("click", closeSheet);
+  if (sheetOverlay) {
+    sheetOverlay.addEventListener("click", (e) => {
+      if (e.target.id === "sheet-overlay") closeSheet();
+    });
+  }
+
   
   // Results currently shown in the dropdown, and which one the arrow keys have
   // landed on (-1 means the input itself, before any result).
@@ -891,7 +1104,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // releases a search spotlight.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (aboutOverlay && aboutOverlay.style.display === "flex") {
+    if (sheetIsOpen()) {
+      closeSheet();
+    } else if (aboutOverlay && aboutOverlay.style.display === "flex") {
       aboutOverlay.style.display = "none";
     } else if (overlay && overlay.style.display === "flex") {
       overlay.style.display = "none";

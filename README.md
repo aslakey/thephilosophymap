@@ -318,3 +318,29 @@ Two details worth knowing:
 - **Ranking is best-field-wins**, with prose far below everything else so that searching `Plato` returns Plato rather than the many philosophers whose teachings discuss him. An exact category name outranks an exact tag, so a term that names a group returns the group.
 
 Searching a term with no matching category falls through to the people, which is often the right answer: there is no `Stoicism` category (School / Movement buckets those thinkers under "Ancient Greek & Roman"), so `Stoicism` returns Epictetus, Seneca, and Zeno.
+
+## Small screens
+
+The map is the content, so on a phone the chrome gets out of its way. Everything except search moves into a bottom sheet behind a **View** button, which takes the control bar from 153px to 63px and gives the map 91–93% of the screen instead of 76%.
+
+The controls are **moved into the sheet, not duplicated**. There is only ever one map toggle, one colour select and one legend in the document, so their handlers and current state survive the trip and no second copy can drift out of sync. `placeControls()` in `docs/main.js` does this on a `matchMedia` change, and the stylesheet hides them from the bar by child selector so they never flash in the wrong place first.
+
+Two breakpoints drive everything, and they are declared in both `docs/index.html` and `docs/main.js`:
+
+| Constant | Query | Governs |
+| --- | --- | --- |
+| `SMALL_SCREEN_QUERY` | `(max-width: 640px), (max-height: 480px)` | compact bar, the sheet, map insets, label threshold |
+| `DETAIL_SHEET_QUERY` | `(max-width: 900px) and (min-height: 481px)` | whether the detail panel is a bottom sheet or a side panel |
+
+They must stay in step across the two files or the map is laid out for one breakpoint while the chrome is styled for another. `tests/test_responsive_layout.py` enforces that, along with the other invariants below, without needing a browser in CI.
+
+The short-screen half of the first query is what catches a phone held sideways: 852×393 is wide enough to look like a desktop and far too short to be treated as one. At that size the detail panel goes back to being a side panel, because there is no room for a sheet.
+
+Other things worth knowing:
+
+- **The map follows the window.** `width` and `height` are read live rather than captured at load, and a debounced `resize` / `orientationchange` handler re-projects the layout. Rotating a phone previously left the map in a portrait-shaped box; this also fixes desktop window resizing, which was broken the same way.
+- **Rotating keeps your place.** A resize re-projects every point, so a zoomed-in reader would otherwise be left staring at empty space. The handler converts the on-screen centre back into source coordinates and re-centres on that same point at the same zoom.
+- **Nodes carry an invisible 44px hit circle**, sized in screen space by dividing by the zoom scale — a fixed radius would shrink exactly when zoomed out and taps are least precise. It only accepts pointer events under `(pointer: coarse)`, so a mouse keeps the precise 10px target and neighbouring points stay individually clickable.
+- **Labels appear sooner on a phone** (zoom 1.3 rather than 2.2), and the selected node and any search matches stay labelled at every zoom level, since there is no hover tooltip to fall back on.
+- **The legend advertises what actually works.** Spotlighting is a hover effect and has no touch equivalent, so under `(hover: none)` the hint reads "Tap a category to filter".
+- **Safe areas are respected** via `viewport-fit=cover` plus `env(safe-area-inset-*)`, so the bar clears the notch and the sheet clears the home indicator. The search input is 16px on phones because anything smaller makes iOS Safari zoom the page on focus.

@@ -118,6 +118,24 @@ producing confusing git diffs.
   ASCII, so adding a philosopher with diacritics needs nothing extra. If you add
   a searchable field, add it to `buildSearchIndex` with a `kind` that exists in
   `FIELD_SCORES`, and remember prose ranks last on purpose.
+- **The phone breakpoints are declared twice, on purpose.** `SMALL_SCREEN_QUERY`
+  and `DETAIL_SHEET_QUERY` in `docs/main.js` mirror `@media` rules in
+  `docs/index.html`: the stylesheet decides how things look, the script decides
+  where the map is drawn and where a selected node parks. Change one and you
+  must change the other, or the map is laid out for a phone while the chrome is
+  styled for a desktop. `tests/test_responsive_layout.py` fails loudly if they
+  drift, which is the only reason the duplication is safe.
+- **On phones the controls are moved into the sheet, not cloned.** There is one
+  map toggle, one colour select and one legend in the document at any time;
+  `placeControls()` relocates the live elements so their handlers and state come
+  with them. If you add a control to the bar, decide whether it belongs in the
+  sheet and add it there too -- otherwise it silently vanishes below 640px,
+  where the stylesheet hides bar children.
+- **Anything hover-only needs a touch answer.** Legend spotlighting is a hover
+  effect with no touch equivalent, so the hint text is chosen from
+  `(hover: hover)` rather than hard-coded. Tooltips (`<title>`, `title=`) are
+  invisible on a phone; if a feature only exists on hover, a touch reader
+  cannot reach it at all.
 - **`ShortName` is data, not a derived value.** It's the label on the map. When
   `add` omits `short_name`, it's seeded from `derive_short_name()` and the
   chosen value is printed -- check it. The heuristic handles parentheticals
