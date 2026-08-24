@@ -10,6 +10,7 @@ from lib.data_model import (
     find_dimension_id_by_name,
     load_coords,
     load_dimension,
+    load_embeddings,
     load_links,
     load_manifest,
     load_philosophers,
@@ -20,6 +21,7 @@ from lib.data_model import (
     resolve_philosopher_id,
     save_coords,
     save_dimension,
+    save_embeddings,
     save_links,
     save_philosophers,
     save_relations,
@@ -155,12 +157,36 @@ class TestRoundTrips:
         reloaded = load_relations()
         assert reloaded.loc[reloaded["ID"] == "P002", "InfluencedByIDs"].iloc[0] == "P001"
 
-    def test_coords_round_trip_preserves_extra_columns(self, data_root):
+    def test_coords_round_trip(self, data_root):
         filename = "coords_semantic_tsne.csv"
         df = load_coords(filename)
-        assert "embedding" in df.columns
+        assert list(df.columns) == ["ID", "x", "y"]
         save_coords(filename, df)
-        assert "embedding" in load_coords(filename).columns
+        assert load_coords(filename).equals(df)
+
+    def test_save_coords_drops_extra_columns(self, data_root):
+        # Regenerating coordinates from a frame that still carries the source
+        # vectors is exactly how the 3MB coords file came about.
+        filename = "coords_semantic_tsne.csv"
+        df = load_coords(filename)
+        df["embedding"] = "[0.1, 0.2]"
+        save_coords(filename, df)
+        assert list(load_coords(filename).columns) == ["ID", "x", "y"]
+
+    def test_save_coords_rejects_a_missing_column(self, data_root):
+        df = load_coords("coords_semantic_tsne.csv").drop(columns=["y"])
+        with pytest.raises(DataModelError, match="missing required column"):
+            save_coords("coords_semantic_tsne.csv", df)
+
+    def test_embeddings_round_trip(self, data_root):
+        df = load_embeddings("semantic_1536.csv")
+        assert list(df.columns) == ["ID", "embedding"]
+        assert len(df) == 3
+        save_embeddings("semantic_1536.csv", df)
+        assert load_embeddings("semantic_1536.csv").equals(df)
+
+    def test_absent_embeddings_read_as_empty(self, data_root):
+        assert load_embeddings("influence_16.csv").empty
 
     def test_missing_files_read_as_empty(self, data_root):
         data_model.relations_path().unlink()

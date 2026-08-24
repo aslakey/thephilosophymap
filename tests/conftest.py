@@ -107,6 +107,12 @@ COORDS_FIXTURE = {
     "P003": (20.0, 20.0),
 }
 
+EMBEDDING_FIXTURE = {
+    "P001": "[0.1, 0.2]",
+    "P002": "[0.3, 0.4]",
+    "P003": "[0.5, 0.6]",
+}
+
 
 def write_csv(path: Path, columns: list[str], rows: list[tuple | list]) -> None:
     import csv
@@ -157,16 +163,20 @@ def build_dataset(root: Path) -> Path:
     )
 
     for filename in data_model.COORDS_FILENAMES:
-        # The semantic files carry an extra embedding column in the real data;
-        # keep one here so placeholder positioning is exercised against both
-        # shapes (with and without the extra column).
-        if "semantic" in filename:
-            columns = ["ID", "x", "y", "embedding"]
-            rows = [[pid, x, y, "0.1|0.2"] for pid, (x, y) in COORDS_FIXTURE.items()]
-        else:
-            columns = ["ID", "x", "y"]
-            rows = [[pid, x, y] for pid, (x, y) in COORDS_FIXTURE.items()]
-        write_csv(root / filename, columns, rows)
+        write_csv(
+            root / filename,
+            data_model.COORDS_COLUMNS,
+            [[pid, x, y] for pid, (x, y) in COORDS_FIXTURE.items()],
+        )
+
+    # Source vectors live beside the coords rather than inside them. Only the
+    # semantic file is seeded, so tests also cover the case of an embedding
+    # table that is absent entirely.
+    write_csv(
+        root / "embeddings" / "semantic_1536.csv",
+        ["ID", "embedding"],
+        [[pid, EMBEDDING_FIXTURE[pid]] for pid in COORDS_FIXTURE],
+    )
 
     return root
 

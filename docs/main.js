@@ -38,6 +38,11 @@ let legendDomain = [];             // categories shown in the legend, in display
 let hiddenCategories = new Set();  // categories toggled off by clicking the legend
 let hoveredCategory = null;        // category currently hovered in the legend
 
+// Search state. An idea matches a set of philosophers rather than one point,
+// so the result is a spotlight rather than a camera move.
+let searchIndex = [];
+let searchMatchIDs = null;         // Set of IDs, or null when no search is active
+
 // -------- Colour --------
 
 function isDarkTheme() {
@@ -285,10 +290,13 @@ function renderLegend() {
     .text(d => groupedCounts.get(d) || 0);
 }
 
-// Opacity for a single node given the current filter/spotlight state.
+// Opacity for a single node given the current filter/spotlight state. Legend
+// filtering and search spotlighting compose: a search result that a legend
+// filter has hidden stays hidden.
 function nodeOpacity(d) {
   const category = colorCategoryForNode(d);
   if (hiddenCategories.has(category)) return DIMMED_OPACITY;
+  if (searchMatchIDs && !searchMatchIDs.has(d.ID)) return SPOTLIGHT_OTHERS_OPACITY;
   if (hoveredCategory && category !== hoveredCategory) return SPOTLIGHT_OTHERS_OPACITY;
   return 1;
 }
@@ -347,15 +355,47 @@ function initSvg() {
 
 // -------- Search + zoom to philosopher --------
 
-function findNodeByQuery(query) {
-  if (!query) return null;
-  const q = query.toLowerCase().trim();
-  // Try exact ID match first
-  let node = currentNodes.find(d => d.ID.toLowerCase() === q);
-  if (node) return node;
-  // Then name contains query
-  node = currentNodes.find(d => (d.Name || "").toLowerCase().includes(q));
-  return node || null;
+function nodeById(id) {
+  return currentNodes.find(d => d.ID === id) || null;
+}
+
+// Applying a result is the one place that decides between the map's two
+// gestures: a single philosopher is worth flying to, a group is not.
+function applySearchResult(result) {
+  if (!result) return;
+
+  const ids = result.philosopherIDs.filter(id => nodeById(id));
+  if (ids.length === 0) return;
+
+  if (ids.length === 1) {
+    clearSearchSpotlight();
+    const node = nodeById(ids[0]);
+    selectNode(node);
+    zoomToNode(node);
+    return;
+  }
+
+  searchMatchIDs = new Set(ids);
+  updateNodeVisibility();
+  renderSearchStatus(`${ids.length} philosophers matching “${result.label}”`);
+}
+
+function clearSearchSpotlight() {
+  if (!searchMatchIDs) {
+    renderSearchStatus(null);
+    return;
+  }
+  searchMatchIDs = null;
+  updateNodeVisibility();
+  renderSearchStatus(null);
+}
+
+function renderSearchStatus(text) {
+  const status = document.getElementById("search-status");
+  const label = document.getElementById("search-status-text");
+  if (!status || !label) return;
+  status.style.display = text ? "flex" : "none";
+  label.textContent = text || "";
 }
 
 function zoomToNode(node) {
@@ -517,6 +557,9 @@ simulation = d3.forceSimulation(nodes)
 
   updateSelectionHighlight();  // draw initial strokes (no selection yet)
   updateLabelVisibility(currentTransform.k);
+  // Switching maps rebuilds every node, so any active legend filter or search
+  // spotlight has to be re-applied or it silently disappears.
+  updateNodeVisibility();
 }
 
 // -------- Helpers --------
@@ -626,91 +669,158 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
   
-  function getSearchSuggestions(query, maxResults = 8) {
-    if (!query) return [];
-    const q = query.toLowerCase().trim();
-    if (!q) return [];
-  
-    // Simple strategy: filter by name containing the query
-    const matches = currentNodes.filter(d =>
-      (d.Name || "").toLowerCase().includes(q) ||
-      d.ID.toLowerCase().includes(q)
-    );
-  
-    // Sort by: starts-with first, then contains
-    matches.sort((a, b) => {
-      const aName = (a.Name || "").toLowerCase();
-      const bName = (b.Name || "").toLowerCase();
-      const aStarts = aName.startsWith(q);
-      const bStarts = bName.startsWith(q);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-      return aName.localeCompare(bName);
-    });
-  
-    return matches.slice(0, maxResults);
+  // Results currently shown in the dropdown, and which one the arrow keys have
+  // landed on (-1 means the input itself, before any result).
+  let activeResults = [];
+  let activeIndex = -1;
+
+  // Snippets are built from data, so they go in as text nodes with a <mark>
+  // element around the match rather than as an HTML string.
+  function appendSnippet(container, snippet) {
+    const el = document.createElement("div");
+    el.className = "suggestion-snippet";
+    const { text, matchStart, matchLength } = snippet;
+
+    el.appendChild(document.createTextNode(text.slice(0, matchStart)));
+    const mark = document.createElement("mark");
+    mark.textContent = text.slice(matchStart, matchStart + matchLength);
+    el.appendChild(mark);
+    el.appendChild(document.createTextNode(text.slice(matchStart + matchLength)));
+
+    container.appendChild(el);
   }
-  
+
+  function highlightActive() {
+    const items = suggestionsBox.querySelectorAll(".suggestion");
+    items.forEach((item, i) => item.classList.toggle("is-active", i === activeIndex));
+    if (activeIndex >= 0 && items[activeIndex]) {
+      items[activeIndex].scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function chooseResult(result) {
+    if (!result) return;
+    searchInput.value = result.label;
+    suggestionsBox.style.display = "none";
+    activeIndex = -1;
+    applySearchResult(result);
+  }
+
   function renderSuggestions(query) {
     if (!suggestionsBox) return;
-  
-    const suggestions = getSearchSuggestions(query);
-  
-    if (!query || suggestions.length === 0) {
+
+    activeResults = query.trim() ? runSearch(searchIndex, query) : [];
+    activeIndex = -1;
+    suggestionsBox.innerHTML = "";
+
+    if (!query.trim()) {
       suggestionsBox.style.display = "none";
-      suggestionsBox.innerHTML = "";
       return;
     }
-  
-    suggestionsBox.innerHTML = "";
+
     suggestionsBox.style.display = "block";
-  
-    suggestions.forEach(d => {
+
+    if (activeResults.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "search-empty";
+      empty.textContent = `Nothing matches “${query.trim()}”`;
+      suggestionsBox.appendChild(empty);
+      return;
+    }
+
+    activeResults.forEach((result, i) => {
       const item = document.createElement("div");
       item.className = "suggestion";
-      item.textContent = d.Name;
-      item.addEventListener("click", () => {
-        searchInput.value = d.Name;
-        suggestionsBox.style.display = "none";
-        selectNode(d);
-        zoomToNode(d);
+
+      const line = document.createElement("div");
+      line.className = "suggestion-line";
+
+      const label = document.createElement("span");
+      label.className = "suggestion-label";
+      label.textContent = result.label;
+      line.appendChild(label);
+
+      const detail = document.createElement("span");
+      detail.className = "suggestion-detail";
+      detail.textContent = result.detail;
+      line.appendChild(detail);
+
+      item.appendChild(line);
+      if (result.snippet) appendSnippet(item, result.snippet);
+
+      item.addEventListener("mouseenter", () => {
+        activeIndex = i;
+        highlightActive();
       });
+      // mousedown fires before the input's blur handler hides the dropdown.
+      item.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        chooseResult(result);
+      });
+
       suggestionsBox.appendChild(item);
     });
   }
 
   function handleSearch() {
-    const query = searchInput.value;
-    const node = findNodeByQuery(query);
-    suggestionsBox.style.display = "none";
-    if (node) {
-      selectNode(node);
-      zoomToNode(node);
+    // With nothing highlighted, Enter takes the top result, which is the
+    // ranking's job to have gotten right.
+    const result = activeResults[activeIndex >= 0 ? activeIndex : 0];
+    if (result) {
+      chooseResult(result);
     } else {
-      console.log("No philosopher found for query:", query);
+      suggestionsBox.style.display = "none";
     }
   }
-  
-  
+
   if (searchInput) {
     searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") handleSearch();
+      const isOpen = suggestionsBox && suggestionsBox.style.display === "block";
+
+      if (e.key === "ArrowDown" && isOpen && activeResults.length) {
+        e.preventDefault();
+        activeIndex = (activeIndex + 1) % activeResults.length;
+        highlightActive();
+        return;
+      }
+      if (e.key === "ArrowUp" && isOpen && activeResults.length) {
+        e.preventDefault();
+        activeIndex = activeIndex <= 0 ? activeResults.length - 1 : activeIndex - 1;
+        highlightActive();
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSearch();
+        return;
+      }
       if (e.key === "Escape" && suggestionsBox) {
         suggestionsBox.style.display = "none";
+        activeIndex = -1;
       }
     });
-  
+
     searchInput.addEventListener("input", () => {
-      const query = searchInput.value;
-      renderSuggestions(query);
+      renderSuggestions(searchInput.value);
+      // Emptying the box is the natural way to ask for the whole map back.
+      if (!searchInput.value.trim()) clearSearchSpotlight();
     });
-  
-    // Optional: hide suggestions when input loses focus
+
     searchInput.addEventListener("blur", () => {
-      // small delay so a click on a suggestion still registers
+      // Small delay so a click on a suggestion still registers.
       setTimeout(() => {
         if (suggestionsBox) suggestionsBox.style.display = "none";
       }, 200);
+    });
+  }
+
+  const searchClear = document.getElementById("search-clear");
+  if (searchClear) {
+    searchClear.addEventListener("click", () => {
+      searchInput.value = "";
+      suggestionsBox.style.display = "none";
+      clearSearchSpotlight();
+      searchInput.focus();
     });
   }
 
@@ -730,6 +840,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Populate the "Color by" dropdown from the dimension manifest, then do the
   // initial render once philosophers + dimension data are cached in memory.
   loadStaticData().then(() => {
+    // Everything the index needs is already in memory, so this costs no
+    // additional request.
+    searchIndex = buildSearchIndex(
+      Array.from(philosophersById.values()),
+      dimensionsManifest,
+      dimensionTables,
+      dimensionLinksByPhilosopher
+    );
+
     if (colorSelect) {
       colorSelect.innerHTML = "";
       dimensionsManifest.forEach(entry => {
@@ -768,13 +887,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Escape closes whichever layer is open.
+  // Escape closes whichever layer is open, innermost first, and finally
+  // releases a search spotlight.
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (aboutOverlay && aboutOverlay.style.display === "flex") {
       aboutOverlay.style.display = "none";
     } else if (overlay && overlay.style.display === "flex") {
       overlay.style.display = "none";
+    } else if (searchMatchIDs) {
+      searchInput.value = "";
+      clearSearchSpotlight();
     }
   });
 
