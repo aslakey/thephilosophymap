@@ -5,7 +5,51 @@
   <!-- viewport-fit=cover lets the layout use env(safe-area-inset-*) to clear the
        notch and home indicator on iPhones. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Map of Philosophy</title>
+  <title>Map of Philosophy — explore thinkers by ideas and influence</title>
+  <meta name="description" content="An interactive map of philosophy. Place thinkers by the meaning of their teachings or by who influenced whom, then color by era, school, politics, and more.">
+  <link rel="canonical" href="https://thephilosophymap.com/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Map of Philosophy">
+  <meta property="og:url" content="https://thephilosophymap.com/">
+  <meta property="og:title" content="Map of Philosophy — explore thinkers by ideas and influence">
+  <meta property="og:description" content="An interactive map of philosophy. Place thinkers by the meaning of their teachings or by who influenced whom, then color by era, school, politics, and more.">
+  <meta property="og:image" content="https://thephilosophymap.com/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/jpeg">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Map of Philosophy — explore thinkers by ideas and influence">
+  <meta name="twitter:description" content="An interactive map of philosophy. Place thinkers by the meaning of their teachings or by who influenced whom, then color by era, school, politics, and more.">
+  <meta name="twitter:image" content="https://thephilosophymap.com/og-image.jpg">
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32">
+  <link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Map of Philosophy",
+    "url": "https://thephilosophymap.com/",
+    "description": "An interactive map of philosophy. Place thinkers by the meaning of their teachings or by who influenced whom, then color by era, school, politics, and more.",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires JavaScript",
+    "image": "https://thephilosophymap.com/og-image.jpg",
+    "keywords": [
+      "philosophy",
+      "philosophers",
+      "influence network",
+      "semantic map",
+      "history of ideas",
+      "interactive visualization"
+    ]
+  }
+  </script>
 <script>
   // Applied before first paint so the page never flashes the wrong theme.
   // Follows the OS preference until the user explicitly picks one.
@@ -62,6 +106,21 @@
   }
 
   * { box-sizing: border-box; }
+
+  /* Crawlable summary for search engines. Visually hidden without display:none,
+     which some crawlers treat as absent. Not a sneaky keyword dump — the same
+     copy is what a no-JS visitor would read. */
+  .seo-copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 
   body {
     margin: 0;
@@ -771,6 +830,39 @@
 </style>
 </head>
 <body>
+  <section class="seo-copy" aria-hidden="true">
+    <h1>Map of Philosophy</h1>
+    <p>
+      An interactive map of philosophical thought across time, place, and tradition.
+      Explore more than a hundred thinkers laid out as a landscape you can wander —
+      to find philosophers similar to ones you have already read, notice gaps in your
+      knowledge, and seek out ideas distant from your own beliefs.
+    </p>
+    <p>
+      There are two ways to draw the map. The <strong>Semantic</strong> view places
+      each philosopher by the meaning of their core teachings, so nearby thinkers
+      asked similar questions even across centuries and continents. The
+      <strong>Influence</strong> view places them by the network of who shaped whom,
+      so nearby thinkers share an intellectual lineage.
+    </p>
+    <p>
+      Color the map by Political Orientation, Religious Orientation, Metaphysical
+      Stance, Ethical Orientation, Era, Region, School or Movement, and more. Click
+      any point for core teachings, historical context, and key works.
+    </p>
+  </section>
+  <noscript>
+    <div style="max-width:40rem;margin:2rem auto;padding:1rem;font-family:system-ui,sans-serif;line-height:1.5">
+      <h1>Map of Philosophy</h1>
+      <p>
+        This site is an interactive map of philosophy and needs JavaScript to draw
+        the visualization. Visit
+        <a href="https://thephilosophymap.com/">thephilosophymap.com</a>
+        with JavaScript enabled to explore thinkers by ideas and influence.
+      </p>
+    </div>
+  </noscript>
+
   <div id="controls">
     <h1 id="title">Map of Philosophy</h1>
     <div id="control-row">
@@ -841,8 +933,8 @@
       <button id="about-close" class="close-btn" type="button" aria-label="Close">✕</button>
       <h2>About the Map of Philosophy</h2>
       <p>
-        Built by <strong>Austin Slakey</strong>, an AI researcher at Netflix, the Map of
-        Philosophy is an exploratory guide to the world of philosophical thought. Instead
+        The Map of Philosophy is an exploratory guide to the world of philosophical
+        thought. Instead
         of a ranked list or a linear history, it lays thinkers out as a landscape you can
         wander — to find philosophers similar to ones you have already read, notice the
         gaps in your own knowledge, and deliberately seek out ideas distant from your own
