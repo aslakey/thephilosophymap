@@ -48,15 +48,20 @@ referenced philosophers' own rows automatically (e.g. adding "influenced_by":
 Subcommands:
     add --spec philosopher.json [--allow-new-categories]
         Create a new philosopher (auto-assigned ID), its dimension links, and
-        any influence relations given in the spec. Also picks a placeholder
-        map position: the existing philosopher with the most overlapping
-        dimension categories (by Jaccard similarity across all 10
-        dimensions) is used as a "nearest neighbor", and the new philosopher
-        is placed at that neighbor's coordinates (plus a small random jitter)
-        in all three coords_*.csv files. This is a rough placeholder, not a
-        real semantic/network embedding -- for a precise position, re-run
-        notebooks/semantics2vec.ipynb and notebooks/node2vec.ipynb to
-        regenerate the coords files from scratch.
+        any influence relations given in the spec. Placeholder map positions
+        are assigned separately per map family:
+
+        - Semantic maps (coords_semantic_*.csv): existing philosopher with the
+          highest Jaccard overlap of dimension categories, excluding region and
+          era (those aren't semantic).
+        - Influence map (coords_node2vec_tsne.csv): the first philosopher in
+          "influenced_by", else the first in "influenced".
+
+        Each chosen neighbor's coordinates are copied with a small random
+        jitter. If one side has no neighbor, the other side's neighbor is used
+        so the new philosopher isn't invisible on that map. This is a rough
+        placeholder, not a real embedding -- for a precise position, re-run
+        notebooks/semantics2vec.ipynb and notebooks/node2vec.ipynb.
 
     edit --id P042 --spec patch.json [--allow-new-categories]
         Patch narrative/scalar fields present in the spec, fully replace the
@@ -92,7 +97,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.data_model import (  # noqa: E402
     COORDS_FILENAMES,
     EMBEDDING_FILENAMES,
+    INFLUENCE_COORDS_FILENAMES,
     PHILOSOPHER_COLUMNS,
+    SEMANTIC_COORDS_FILENAMES,
     DataModelError,
     derive_short_name,
     dimension_keys,
@@ -275,15 +282,31 @@ def write_relations_for_philosopher(philosopher_id: str, resolved_relations: dic
 # Placeholder map coordinates (docs/data/coords_*.csv)
 # ---------------------------------------------------------------------------
 
-def dimension_id_sets_by_philosopher() -> dict[str, set[str]]:
+# Region and era locate a philosopher in space/time; they are not semantic
+# categories, so Jaccard placement on the idea maps ignores them.
+SEMANTIC_PLACEHOLDER_EXCLUDE = frozenset({"region", "era"})
+
+
+def dimension_id_sets_by_philosopher(exclude_keys: frozenset[str] | None = None) -> dict[str, set[str]]:
     """Every existing philosopher's set of linked DimensionIDs, pooled across
-    all 10 dimensions (used only to find a 'nearest neighbor' by shared
-    categories -- Rank is ignored, a linked value counts regardless of rank)."""
+    the dimensions that count for this comparison (Rank is ignored)."""
+    skip = exclude_keys or frozenset()
     sets: dict[str, set[str]] = {}
     for key in dimension_keys():
+        if key in skip:
+            continue
         for _, row in load_links(key).iterrows():
             sets.setdefault(row["PhilosopherID"], set()).add(row["DimensionID"])
     return sets
+
+
+def semantic_dimension_ids(resolved_dimensions: dict[str, list[str]]) -> set[str]:
+    return {
+        dim_id
+        for key, ids in resolved_dimensions.items()
+        if key not in SEMANTIC_PLACEHOLDER_EXCLUDE
+        for dim_id in ids
+    }
 
 
 def nearest_neighbor_by_dimensions(new_dimension_ids: set[str], existing_sets: dict[str, set[str]]) -> str | None:
@@ -303,9 +326,18 @@ def nearest_neighbor_by_dimensions(new_dimension_ids: set[str], existing_sets: d
     return best_id
 
 
-def assign_placeholder_coordinates(new_id: str, neighbor_id: str) -> None:
+def influence_neighbor_from_relations(resolved_relations: dict[str, list[str]]) -> str | None:
+    """Prefer the first philosopher in influenced_by, else the first in influenced."""
+    for spec_key in ("influenced_by", "influenced"):
+        ids = resolved_relations.get(spec_key) or []
+        if ids:
+            return ids[0]
+    return None
+
+
+def assign_placeholder_coordinates(new_id: str, neighbor_id: str, filenames: list[str]) -> None:
     """Naive placeholder positioning: copy the neighbor's coordinates into a new
-    row for new_id in every coords_*.csv file, with a small random jitter so the
+    row for new_id in the given coords files, with a small random jitter so the
     two points don't exactly overlap. This is not a real semantic/network
     embedding -- rerun the notebooks under notebooks/ for a precise position.
 
@@ -313,7 +345,7 @@ def assign_placeholder_coordinates(new_id: str, neighbor_id: str) -> None:
     would make the two philosophers identical to anything that measures
     similarity, which is a worse failure than simply having no vector yet."""
     rng = np.random.default_rng()
-    for filename in COORDS_FILENAMES:
+    for filename in filenames:
         df = load_coords(filename)
         if df.empty or "ID" not in df.columns:
             continue
@@ -353,10 +385,12 @@ def cmd_add(args):
     resolved_relations = resolve_all_relation_specs(spec, philosophers)
     resolved_dimensions = resolve_all_dimension_specs(spec, args.allow_new_categories)
 
-    # Snapshot existing philosophers' dimension sets *before* writing the new
-    # philosopher's own links, so they can never end up as their own "nearest
-    # neighbor" for placeholder positioning below.
-    existing_dimension_sets = dimension_id_sets_by_philosopher()
+    # Snapshot existing philosophers' semantic dimension sets *before* writing
+    # the new philosopher's own links, so they can never end up as their own
+    # nearest neighbor for placeholder positioning below.
+    existing_dimension_sets = dimension_id_sets_by_philosopher(
+        exclude_keys=SEMANTIC_PLACEHOLDER_EXCLUDE
+    )
 
     new_id = next_philosopher_id(philosophers)
 
@@ -384,18 +418,43 @@ def cmd_add(args):
 
     print(f"Added [{new_id}] {spec['name']}.")
 
-    new_dimension_ids = {dim_id for ids in resolved_dimensions.values() for dim_id in ids}
-    neighbor_id = nearest_neighbor_by_dimensions(new_dimension_ids, existing_dimension_sets)
-    if neighbor_id:
-        neighbor_name = philosophers.loc[philosophers["ID"] == neighbor_id, "Name"].iloc[0]
-        print(f"Nearest neighbor by shared categories: [{neighbor_id}] {neighbor_name} -- using as a placeholder map position.")
-        assign_placeholder_coordinates(new_id, neighbor_id)
-        print("  (this is a rough placeholder, not a real embedding -- rerun notebooks/semantics2vec.ipynb "
-              "and notebooks/node2vec.ipynb for a precise position once convenient)")
-        print("  (no vector was written to docs/data/embeddings/; the notebooks generate those)")
-    else:
-        print("No dimension categories given, so no placeholder map position was assigned. "
+    semantic_neighbor = nearest_neighbor_by_dimensions(
+        semantic_dimension_ids(resolved_dimensions),
+        existing_dimension_sets,
+    )
+    influence_neighbor = influence_neighbor_from_relations(resolved_relations)
+    semantic_place = semantic_neighbor or influence_neighbor
+    influence_place = influence_neighbor or semantic_neighbor
+
+    def neighbor_name(philosopher_id: str) -> str:
+        return philosophers.loc[philosophers["ID"] == philosopher_id, "Name"].iloc[0]
+
+    if not semantic_place and not influence_place:
+        print("No semantic categories or influence relations given, so no placeholder map position was assigned. "
               "Add coordinates to coords_*.csv manually, or rerun the embedding notebooks.")
+        return
+
+    if semantic_place:
+        reason = (
+            "shared semantic categories (Jaccard, excluding region/era)"
+            if semantic_neighbor
+            else "influence neighbor (no semantic categories to compare)"
+        )
+        print(f"Semantic placeholder neighbor: [{semantic_place}] {neighbor_name(semantic_place)} -- {reason}.")
+        assign_placeholder_coordinates(new_id, semantic_place, SEMANTIC_COORDS_FILENAMES)
+
+    if influence_place:
+        if influence_neighbor:
+            source = "influenced_by" if (resolved_relations.get("influenced_by") or [None])[0] == influence_neighbor else "influenced"
+            reason = f"first {source} in the spec"
+        else:
+            reason = "semantic neighbor (no influence relations given)"
+        print(f"Influence placeholder neighbor: [{influence_place}] {neighbor_name(influence_place)} -- {reason}.")
+        assign_placeholder_coordinates(new_id, influence_place, INFLUENCE_COORDS_FILENAMES)
+
+    print("  (this is a rough placeholder, not a real embedding -- rerun notebooks/semantics2vec.ipynb "
+          "and notebooks/node2vec.ipynb for a precise position once convenient)")
+    print("  (no vector was written to docs/data/embeddings/; the notebooks generate those)")
 
 
 def cmd_edit(args):

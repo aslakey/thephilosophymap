@@ -81,19 +81,50 @@ class TestAdd:
         for filename in COORDS_FILENAMES:
             assert "P004" in set(load_coords(filename)["ID"]), filename
 
-    def test_places_new_philosopher_near_its_closest_match(self, data_root, tmp_path):
-        # Delta shares Europe + Ethics with Alpha (P001) at (0, 0), so the
-        # placeholder should land next to Alpha rather than anywhere else.
+    def test_places_semantic_coords_by_topic_jaccard_not_region(self, data_root, tmp_path):
+        # Delta shares Europe with Alpha and Logic with Gamma. Region is not
+        # semantic, so Jaccard over topics picks Gamma (Logic) over Alpha (Ethics).
         run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])
-        coords = load_coords("coords_node2vec_tsne.csv")
-        row = coords[coords["ID"] == "P004"].iloc[0]
+        for filename in ("coords_semantic_tsne.csv", "coords_semantic_umap.csv"):
+            coords = load_coords(filename)
+            row = coords[coords["ID"] == "P004"].iloc[0]
+            assert abs(float(row["x"]) - 20.0) < 1.0, filename
+            assert abs(float(row["y"]) - 20.0) < 1.0, filename
+
+    def test_influence_coords_fall_back_to_semantic_neighbor(self, data_root, tmp_path):
+        run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])
+        row = load_coords("coords_node2vec_tsne.csv")
+        row = row[row["ID"] == "P004"].iloc[0]
+        assert abs(float(row["x"]) - 20.0) < 1.0
+        assert abs(float(row["y"]) - 20.0) < 1.0
+
+    def test_influence_coords_prefer_influenced_by(self, data_root, tmp_path):
+        spec = {**VALID_SPEC, "influenced_by": ["Alpha"], "influenced": ["Beta"]}
+        run(["add", "--spec", write_spec(tmp_path, spec)])
+        influence = load_coords("coords_node2vec_tsne.csv")
+        row = influence[influence["ID"] == "P004"].iloc[0]
         assert abs(float(row["x"])) < 1.0
         assert abs(float(row["y"])) < 1.0
+        semantic = load_coords("coords_semantic_tsne.csv")
+        row = semantic[semantic["ID"] == "P004"].iloc[0]
+        assert abs(float(row["x"]) - 20.0) < 1.0
+        assert abs(float(row["y"]) - 20.0) < 1.0
+
+    def test_influence_coords_use_influenced_when_no_influenced_by(self, data_root, tmp_path):
+        spec = {**VALID_SPEC, "influenced": ["Beta"]}
+        run(["add", "--spec", write_spec(tmp_path, spec)])
+        row = load_coords("coords_node2vec_tsne.csv")
+        row = row[row["ID"] == "P004"].iloc[0]
+        assert abs(float(row["x"]) - 10.0) < 1.0
+        assert abs(float(row["y"]) - 10.0) < 1.0
 
     def test_does_not_pick_itself_as_neighbour(self, data_root, tmp_path, capsys):
         run(["add", "--spec", write_spec(tmp_path, VALID_SPEC)])
         out = capsys.readouterr().out
-        assert "P004" not in out.split("Nearest neighbor by shared categories:")[1].split("\n")[0]
+        semantic_line = out.split("Semantic placeholder neighbor:")[1].split("\n")[0]
+        influence_line = out.split("Influence placeholder neighbor:")[1].split("\n")[0]
+        assert "P004" not in semantic_line
+        assert "P004" not in influence_line
 
     def test_does_not_fabricate_an_embedding(self, data_root, tmp_path):
         # The placeholder position is copied from a neighbour, but the vector is
@@ -118,6 +149,14 @@ class TestAdd:
     def test_spec_without_dimensions_skips_placement(self, data_root, tmp_path, capsys):
         run(["add", "--spec", write_spec(tmp_path, {"name": "Nameless"})])
         assert "no placeholder map position" in capsys.readouterr().out
+
+    def test_influence_only_spec_still_places_on_semantic_maps(self, data_root, tmp_path):
+        run(["add", "--spec", write_spec(tmp_path, {"name": "Nameless", "influenced_by": ["Alpha"]})])
+        for filename in COORDS_FILENAMES:
+            row = load_coords(filename)
+            row = row[row["ID"] == "P004"].iloc[0]
+            assert abs(float(row["x"])) < 1.0
+            assert abs(float(row["y"])) < 1.0
 
 
 class TestControlledVocabulary:

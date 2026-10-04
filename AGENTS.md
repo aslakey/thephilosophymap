@@ -93,9 +93,11 @@ producing confusing git diffs.
 
 ## Things that will surprise you
 
-- **Map coordinates for new philosophers are placeholders.** `add` copies the
-  position of the most dimensionally-similar existing philosopher and jitters
-  it. It is not a real embedding. Rerun `notebooks/semantics2vec.ipynb` and
+- **Map coordinates for new philosophers are placeholders.** `add` places
+  semantic maps next to the highest Jaccard overlap of categories (excluding
+  region and era) and the influence map next to the first `influenced_by`
+  (else first `influenced`). Each copy is jittered. It is not a real
+  embedding. Rerun `notebooks/semantics2vec.ipynb` and
   `notebooks/node2vec.ipynb` to regenerate real positions.
 - **Removing a philosopher who has any influence edges requires `--force`.**
   Because edges are mirrored onto the other philosopher's row, anyone with a
