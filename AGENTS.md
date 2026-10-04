@@ -66,7 +66,9 @@ table (`dimensions/<key>.csv`: `ID, Name, Description`) and a link table
 the primary value used for map colouring). `relations.csv` holds the influence
 graph, with both directions kept symmetric. The `coords_*.csv` files hold 2D
 positions for the three map views (`ID, x, y` only), and `embeddings/*.csv`
-holds the source vectors those positions were reduced from. All I/O goes through
+holds the source vectors those positions were reduced from. `philosophize_this.csv`
+is an optional sidecar of Philosophize This! episode links (`PhilosopherID,
+Episode, Title, URL`). All I/O goes through
 [`scripts/lib/data_model.py`](scripts/lib/data_model.py) -- don't hand-roll CSV
 paths.
 
@@ -145,3 +147,9 @@ producing confusing git diffs.
   philosopher's common short form isn't just their last name, set `short_name`
   explicitly. `validate.py` will reject an empty one, and rejects labels
   containing brackets since those indicate a name truncated mid-parenthetical.
+- **Podcast links live in `philosophize_this.csv`, not on the philosopher row.**
+  Rebuild with `python scripts/migrations/0004_add_philosophize_this.py` rather
+  than editing the CSV. Matching is conservative (see
+  `scripts/lib/philosophize_this.py`); if a new episode names someone and didn't
+  attach, add an alias or a `THEME_EPISODES` entry there and re-run. `remove`
+  strips a philosopher's rows. A missing file is valid.

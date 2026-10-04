@@ -103,6 +103,7 @@ from lib.data_model import (  # noqa: E402
     load_embeddings,
     load_links,
     load_philosophers,
+    load_philosophize_this,
     load_relations,
     next_dimension_id,
     next_philosopher_id,
@@ -112,6 +113,7 @@ from lib.data_model import (  # noqa: E402
     save_embeddings,
     save_links,
     save_philosophers,
+    save_philosophize_this,
     save_relations,
     suggest_similar_names,
 )
@@ -471,7 +473,12 @@ def cmd_remove(args):
         if len(remaining) != len(emb_df):
             save_embeddings(filename, remaining)
 
-    print(f"Removed [{args.id}] {name!r}, their dimension links, relations, map coordinates, and embeddings.")
+    episodes = load_philosophize_this()
+    remaining_episodes = episodes[episodes["PhilosopherID"] != args.id]
+    if len(remaining_episodes) != len(episodes):
+        save_philosophize_this(remaining_episodes)
+
+    print(f"Removed [{args.id}] {name!r}, their dimension links, relations, map coordinates, embeddings, and podcast links.")
 
 
 def build_parser():

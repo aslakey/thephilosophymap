@@ -5,6 +5,8 @@ Data model
 ----------
 docs/data/philosophers.csv            fact table: ID, Name, BirthYear, DeathYear,
                                        CoreTeachings, HistoricalContext, KeyWorks, Tags
+docs/data/philosophize_this.csv       optional: PhilosopherID, Episode, Title, URL
+                                       (Philosophize This! episodes that name this person)
 docs/data/relations.csv               unchanged: ID, InfluencedByIDs, InfluencedIDs
 docs/data/coords_*.csv                2D map positions only: ID, x, y
 docs/data/embeddings/*.csv            source vectors: ID, embedding
@@ -94,6 +96,10 @@ def embeddings_path(filename: str) -> Path:
     return embeddings_dir() / filename
 
 
+def philosophize_this_path() -> Path:
+    return data_dir() / "philosophize_this.csv"
+
+
 # 2D map coordinate files: ID, x, y and nothing else. The high-dimensional
 # vectors these were reduced from live in embeddings/ instead -- the frontend
 # only ever reads x and y, so carrying 1536 floats per row here meant shipping
@@ -120,6 +126,7 @@ PHILOSOPHER_COLUMNS = [
 DIMENSION_COLUMNS = ["ID", "Name", "Description"]
 LINK_COLUMNS = ["PhilosopherID", "DimensionID", "Rank"]
 RELATIONS_COLUMNS = ["ID", "InfluencedByIDs", "InfluencedIDs"]
+PHILOSOPHIZE_THIS_COLUMNS = ["PhilosopherID", "Episode", "Title", "URL"]
 
 
 class DataModelError(Exception):
@@ -346,3 +353,24 @@ def save_embeddings(filename: str, df: pd.DataFrame) -> None:
     path = embeddings_path(filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     df[["ID", "embedding"]].to_csv(path, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Philosophize This! episode links (docs/data/philosophize_this.csv)
+# ---------------------------------------------------------------------------
+
+def load_philosophize_this() -> pd.DataFrame:
+    """Episode links keyed by philosopher. Missing file is an empty table."""
+    path = philosophize_this_path()
+    if not path.exists():
+        return pd.DataFrame(columns=PHILOSOPHIZE_THIS_COLUMNS)
+    return pd.read_csv(path, dtype=str, keep_default_na=False)
+
+
+def save_philosophize_this(df: pd.DataFrame) -> None:
+    path = philosophize_this_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ordered = df[PHILOSOPHIZE_THIS_COLUMNS].copy()
+    ordered["_n"] = pd.to_numeric(ordered["Episode"], errors="coerce")
+    ordered = ordered.sort_values(["PhilosopherID", "_n"], kind="mergesort").drop(columns=["_n"])
+    ordered.to_csv(path, index=False)
