@@ -109,6 +109,13 @@ COORDS_FILENAMES = [
     "coords_semantic_umap.csv",
     "coords_node2vec_tsne.csv",
 ]
+SEMANTIC_COORDS_FILENAMES = [
+    "coords_semantic_tsne.csv",
+    "coords_semantic_umap.csv",
+]
+INFLUENCE_COORDS_FILENAMES = [
+    "coords_node2vec_tsne.csv",
+]
 COORDS_COLUMNS = ["ID", "x", "y"]
 
 # Source vectors, keyed by philosopher ID. Not currently fetched by the site;

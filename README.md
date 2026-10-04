@@ -242,14 +242,21 @@ adds the new philosopher to Aristotle's `InfluencedIDs`).
 `add` also assigns a rough starting position on all three map views
 (`coords_semantic_tsne.csv`, `coords_semantic_umap.csv`,
 `coords_node2vec_tsne.csv`) so a new philosopher isn't simply invisible on
-the map: it finds the existing philosopher with the most overlapping
-dimension categories (Jaccard similarity across all 10 dimensions) and
-places the new philosopher at that neighbor's coordinates, with a small
-random jitter so the two points don't exactly overlap. This is a naive
-placeholder, not a real embedding -- it doesn't call any API or touch the
-underlying semantic/network vectors. For a precise position once you have
-enough new philosophers to justify it, rerun `notebooks/semantics2vec.ipynb`
-and `notebooks/node2vec.ipynb` to regenerate the coords files from scratch.
+the map. Semantic and influence maps use different neighbors:
+
+- **Semantic maps** (`coords_semantic_*.csv`): existing philosopher with the
+  highest Jaccard overlap of dimension categories, **excluding region and
+  era** (those locate someone in space/time, they are not semantic).
+- **Influence map** (`coords_node2vec_tsne.csv`): the first philosopher in
+  `"influenced_by"`, or if that list is empty, the first in `"influenced"`.
+
+If one side has no neighbor, the other side's neighbor is used so the new
+philosopher still appears on every map. Each copy is jittered slightly so
+the two points don't exactly overlap. This is a naive placeholder, not a
+real embedding -- it doesn't call any API or touch the underlying
+semantic/network vectors. For a precise position once you have enough new
+philosophers to justify it, rerun `notebooks/semantics2vec.ipynb` and
+`notebooks/node2vec.ipynb` to regenerate the coords files from scratch.
 `remove` cleans up a philosopher's row from all three coords files (and
 `validate.py` checks that every philosopher has a row in each one).
 

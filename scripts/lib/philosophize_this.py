@@ -36,6 +36,7 @@ GENERIC_SURNAMES = {
     "yang",
     "xi",
     "wang",
+    "school",
 }
 
 # Extra title phrases, already folded, that should count as this philosopher.
@@ -62,6 +63,7 @@ EXTRA_ALIASES: dict[str, list[str]] = {
     "P099": ["cornel west"],
     "P100": ["bell hooks"],
     "P101": ["the buddha", "buddha", "siddhartha", "gautama"],
+    "P106": ["kyoto school"],
 }
 
 # Episode number -> philosopher IDs for titles that name a school, not a person.

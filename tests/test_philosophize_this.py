@@ -20,6 +20,9 @@ LAOZI = {"ID": "P067", "Name": "Laozi (Lao Tzu)", "ShortName": "Laozi"}
 BUDDHA = {"ID": "P101", "Name": "Siddhārtha Gautama (the Buddha)", "ShortName": "Buddha"}
 NAGARJUNA = {"ID": "P074", "Name": "Nāgārjuna", "ShortName": "Nāgārjuna"}
 ZENO = {"ID": "P005", "Name": "Zeno of Citium", "ShortName": "Zeno"}
+HAN = {"ID": "P104", "Name": "Byung-Chul Han", "ShortName": "Byung-Chul Han"}
+HAN_FEIZI = {"ID": "P070", "Name": "Han Feizi", "ShortName": "Han Feizi"}
+NISHITANI = {"ID": "P106", "Name": "Keiji Nishitani", "ShortName": "Nishitani"}
 
 
 def test_parse_episode_number_variants():
@@ -49,6 +52,18 @@ def test_curated_aliases():
 
 def test_diacritics_fold():
     assert title_matches("Episode about Nagarjuna", NAGARJUNA)
+
+
+def test_byung_chul_han_does_not_steal_han_feizi():
+    assert title_matches("Episode #188 - Byung-Chul Han", HAN)
+    assert not title_matches("Episode #187 - Han Feizi", HAN)
+    assert title_matches("Episode #187 - Han Feizi", HAN_FEIZI)
+    assert not title_matches("Episode #188 - Byung-Chul Han", HAN_FEIZI)
+
+
+def test_kyoto_school_alias():
+    assert title_matches("Episode #216 ... The Kyoto School", NISHITANI)
+    assert not title_matches("Episode #108 ... The Frankfurt School pt. 1 - Introduction", NISHITANI)
 
 
 def test_theme_episode_early_stoa():
