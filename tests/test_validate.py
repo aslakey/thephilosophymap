@@ -47,6 +47,7 @@ def all_errors() -> list[str]:
         errors.extend(validate.check_links_table(key, dim_df, links_df, philosopher_ids))
     errors.extend(validate.check_relations(philosopher_ids))
     errors.extend(validate.check_coords(philosopher_ids))
+    errors.extend(validate.check_philosophize_this(philosopher_ids))
     return errors
 
 

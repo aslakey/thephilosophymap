@@ -293,11 +293,22 @@ as primary and generate `InfluencedIDs` programmatically as the reverse edges.
 
 For search, filtering, and visual exploration:
 
+- **From `philosophize_this.csv`** – optional episode links to [Philosophize This!](https://www.philosophizethis.org/), shown in the detail panel when a title names that philosopher.
 - **From `philosophers.csv`** – narrative fields (`CoreTeachings`, `HistoricalContext`, `KeyWorks`, `Tags`) for reading and full-text search.
 - **From the dimension tables** – any of the 10 dimensions (`region`, `civilization`, `era`, `school_movement`, `primary_topic`, `metaphysical_stance`, `epistemological_stance`, `ethical_orientation`, `political_orientation`, `religious_orientation`) for coloring, topic filters, or faceted search. The frontend reads `dimensions/manifest.json` to auto-populate the "Color by" dropdown and resolve a philosopher's primary/secondary values via the corresponding link table.
 - **From `relations.csv`** – `InfluencedByIDs` / `InfluencedIDs` for building influence graphs, network diagrams, or "intellectual family trees."
 
 Together, these files define the structure behind the "map of philosophy" and support both a readable guide and rich visualizations.
+
+### Philosophize This! episode links
+
+`docs/data/philosophize_this.csv` is a sidecar (`PhilosopherID, Episode, Title, URL`), not a column on the fact table, because a philosopher can have several episodes and an episode can name several people. It is built by:
+
+```bash
+python scripts/migrations/0004_add_philosophize_this.py
+```
+
+which fetches the public RSS feed plus Apple Podcasts catalog and matches titles conservatively: a distinctive name in the title, plus a few aliases (`Confucianism`, `Daoism`, `the Buddha`) and school-level episodes (Early Stoa, Frankfurt School introduction). Short surnames like `Mill` or `West` are never matched alone. Re-run the migration when new episodes land; don't hand-edit the CSV.
 
 ---
 

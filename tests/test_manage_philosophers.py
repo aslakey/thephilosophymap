@@ -12,7 +12,9 @@ from lib.data_model import (
     load_embeddings,
     load_links,
     load_philosophers,
+    load_philosophize_this,
     load_relations,
+    save_philosophize_this,
 )
 from test_validate import all_errors
 
@@ -259,6 +261,18 @@ class TestRemove:
         assert "P003" not in set(load_relations()["ID"])
         for filename in COORDS_FILENAMES:
             assert "P003" not in set(load_coords(filename)["ID"]), filename
+
+    def test_removes_podcast_links(self, data_root):
+        import pandas as pd
+
+        save_philosophize_this(pd.DataFrame([
+            {"PhilosopherID": "P003", "Episode": "5", "Title": "Aristotle", "URL": "https://example.com/5"},
+            {"PhilosopherID": "P001", "Episode": "3", "Title": "Socrates", "URL": "https://example.com/3"},
+        ]))
+        run(["remove", "--id", "P003"])
+        remaining = load_philosophize_this()
+        assert "P003" not in set(remaining["PhilosopherID"])
+        assert "P001" in set(remaining["PhilosopherID"])
 
     def test_refuses_while_referenced_by_others(self, data_root):
         # P001 influenced P002, so removing P001 would dangle that reference.

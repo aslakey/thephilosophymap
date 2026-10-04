@@ -58,6 +58,7 @@ let hoveredCategory = null;        // category currently hovered in the legend
 // so the result is a spotlight rather than a camera move.
 let searchIndex = [];
 let searchMatchIDs = null;         // Set of IDs, or null when no search is active
+let philosophizeById = new Map();  // philosopher ID -> [{Episode, Title, URL}, ...]
 
 // -------- Colour --------
 
@@ -189,10 +190,25 @@ function loadStaticData() {
       filePromises.push(d3.csv("data/" + entry.linksFile));
     });
     filePromises.push(d3.csv("data/philosophers.csv"));
+    // Optional: a missing sidecar just means nobody has an episode link yet.
+    const podcastPromise = d3.csv("data/philosophize_this.csv").catch(() => []);
 
-    return Promise.all(filePromises).then(results => {
+    return Promise.all([Promise.all(filePromises), podcastPromise]).then(([results, podcastRows]) => {
       const philosophers = results[results.length - 1];
       philosophersById = new Map(philosophers.map(d => [d.ID, d]));
+
+      philosophizeById = new Map();
+      (podcastRows || []).forEach(row => {
+        if (!row.PhilosopherID || !row.URL) return;
+        const list = philosophizeById.get(row.PhilosopherID) || [];
+        list.push({
+          episode: +row.Episode,
+          title: row.Title,
+          url: row.URL
+        });
+        philosophizeById.set(row.PhilosopherID, list);
+      });
+      philosophizeById.forEach(list => list.sort((a, b) => a.episode - b.episode));
 
       manifest.forEach((entry, i) => {
         const dimRows = results[i * 2];
@@ -752,6 +768,22 @@ function renderModalDimensionRows(philosopherId) {
 }
 
 // Modal
+function renderPodcastLinks(philosopherId) {
+  const episodes = philosophizeById.get(philosopherId);
+  if (!episodes || !episodes.length) return "";
+
+  const items = episodes.map(ep => {
+    const label = escapeHtml(ep.title || `Episode #${ep.episode}`);
+    const href = escapeHtml(ep.url);
+    return `<li><a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a></li>`;
+  }).join("");
+
+  return `
+    <h3>Philosophize This!</h3>
+    <ul class="podcast-links">${items}</ul>
+  `;
+}
+
 function showModal(d) {
   const overlay = document.getElementById("modal-overlay");
   const titleEl = document.getElementById("modal-title");
@@ -773,6 +805,7 @@ function showModal(d) {
     <p>${escapeHtml(phil["HistoricalContext"])}</p>
     <h3>Key Works</h3>
     <p>${escapeHtml(phil["KeyWorks"])}</p>
+    ${renderPodcastLinks(d.ID)}
   `;
 
   focusNodeForModal(d);

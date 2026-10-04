@@ -25,6 +25,11 @@ Also checks that every philosopher has a row in every coords_*.csv map file
 and that those files carry only ID, x, y, since the source vectors they were
 reduced from belong in embeddings/ rather than in what the browser downloads.
 
+Also checks docs/data/philosophize_this.csv, if present: every PhilosopherID
+exists, Episode is a positive integer, Title and URL are non-empty, and there
+are no duplicate (PhilosopherID, Episode) pairs. The file is allowed to be
+absent or partial -- not every philosopher has an episode.
+
 Usage:
     python scripts/validate.py             # run all checks, exit 1 on any failure
     python scripts/validate.py --report    # also print category counts per dimension
@@ -50,6 +55,7 @@ from lib.data_model import (  # noqa: E402
     load_links,
     load_manifest,
     load_philosophers,
+    load_philosophize_this,
     load_relations,
     relations_path,
 )
@@ -211,6 +217,43 @@ def check_embeddings(philosopher_ids: set[str]) -> list[str]:
     return errors
 
 
+def check_philosophize_this(philosopher_ids: set[str]) -> list[str]:
+    """Episode links are optional, but a present file has to point at real people."""
+    df = load_philosophize_this()
+    if df.empty:
+        return []
+
+    errors = []
+    expected = {"PhilosopherID", "Episode", "Title", "URL"}
+    missing_cols = expected - set(df.columns)
+    if missing_cols:
+        return [f"[philosophize_this] expected columns {sorted(expected)}; found {list(df.columns)}"]
+
+    unknown = set(df["PhilosopherID"]) - philosopher_ids
+    if unknown:
+        errors.append(
+            f"[philosophize_this] {len(unknown)} row(s) reference unknown philosopher ID: {sorted(unknown)}"
+        )
+
+    empty_title = df[df["Title"].str.strip() == ""]
+    if not empty_title.empty:
+        errors.append(f"[philosophize_this] {len(empty_title)} row(s) with an empty Title")
+
+    empty_url = df[~df["URL"].str.startswith("http")]
+    if not empty_url.empty:
+        errors.append(f"[philosophize_this] {len(empty_url)} row(s) with a missing or non-http URL")
+
+    non_int = [value for value in df["Episode"] if not str(value).isdigit() or int(value) < 1]
+    if non_int:
+        errors.append(f"[philosophize_this] Episode must be a positive integer; got {non_int[:8]}")
+
+    dupes = df.duplicated(subset=["PhilosopherID", "Episode"])
+    if dupes.any():
+        pairs = df.loc[dupes, ["PhilosopherID", "Episode"]].values.tolist()
+        errors.append(f"[philosophize_this] duplicate (PhilosopherID, Episode) pairs: {pairs}")
+    return errors
+
+
 def print_report(key: str, dim_df: pd.DataFrame, links_df: pd.DataFrame) -> None:
     counts = links_df[links_df["Rank"] == 1]["DimensionID"].value_counts()
     id_to_name = dict(zip(dim_df["ID"], dim_df["Name"], strict=True))
@@ -248,6 +291,7 @@ def main():
     all_errors.extend(check_relations(philosopher_ids))
     all_errors.extend(check_coords(philosopher_ids))
     all_errors.extend(check_embeddings(philosopher_ids))
+    all_errors.extend(check_philosophize_this(philosopher_ids))
 
     print(f"\n{len(manifest)} dimensions checked across {len(philosophers)} philosophers.")
 
